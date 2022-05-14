@@ -1,7 +1,5 @@
 use super::SubscriptionError;
-use crate::backends::storages::{
-    ConsumeError, MessageStorage, TopicDoesNotExist, TopicExists,
-};
+use crate::backends::storages::{ConsumeError, MessageStorage, TopicDoesNotExist, TopicExists};
 use crate::types::{Message, Partition, Topic};
 use crate::utils::clock::Clock;
 use chrono::DateTime;

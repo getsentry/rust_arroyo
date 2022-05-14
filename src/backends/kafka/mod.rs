@@ -124,10 +124,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
         Ok(())
     }
 
-    fn poll(
-        &mut self,
-        _: Option<f64>,
-    ) -> Result<Option<ArroyoMessage<OwnedMessage>>, PollError> {
+    fn poll(&mut self, _: Option<f64>) -> Result<Option<ArroyoMessage<OwnedMessage>>, PollError> {
         match self.consumer.as_mut() {
             None => Err(PollError::ConsumerClosed),
             Some(consumer) => {
@@ -236,7 +233,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
 #[cfg(test)]
 mod tests {
     use super::AssignmentCallbacks;
-    use crate::types::{Partition};
+    use crate::types::Partition;
     use std::collections::HashMap;
 
     struct EmptyCallbacks {}

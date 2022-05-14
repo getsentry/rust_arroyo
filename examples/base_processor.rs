@@ -5,7 +5,7 @@ use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::processing::strategies::{
     CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
 };
-use rust_arroyo::processing::{StreamProcessor};
+use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::{Message, Partition, Position, Topic};
 use std::collections::HashMap;
 
