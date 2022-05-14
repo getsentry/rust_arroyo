@@ -222,6 +222,7 @@ mod tests {
         message: Option<Message<String>>,
     }
     impl ProcessingStrategy<String> for TestStrategy {
+        #[allow(clippy::manual_map)]
         fn poll(&mut self) -> Option<CommitRequest> {
             match self.message.as_ref() {
                 None => None,
