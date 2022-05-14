@@ -15,7 +15,7 @@ struct TestStrategy {
 impl ProcessingStrategy<OwnedMessage> for TestStrategy {
     fn poll(&mut self) -> Option<CommitRequest> {
         println!("POLL");
-        if self.partitions.len() > 0 {
+        if !self.partitions.is_empty() {
             // TODO: Actually make commit work. It does not seem
             // to work now.
             let ret = Some(CommitRequest {

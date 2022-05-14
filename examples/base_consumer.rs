@@ -24,8 +24,8 @@ fn main() {
     let topic = Topic {
         name: "test_static".to_string(),
     };
-    let res = consumer.subscribe(&vec![topic], Box::new(EmptyCallbacks {}));
-    assert_eq!(res.is_ok(), true);
+    let res = consumer.subscribe(&[topic], Box::new(EmptyCallbacks {}));
+    assert!(res.is_ok());
     println!("Subscribed");
     for _ in 0..20 {
         println!("Polling");

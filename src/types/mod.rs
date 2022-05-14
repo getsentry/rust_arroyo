@@ -29,7 +29,7 @@ impl fmt::Display for Topic {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Partition {
     // TODO: Make this a reference to 'static Topic.
     pub topic: Topic,
@@ -37,13 +37,6 @@ pub struct Partition {
 }
 
 impl Eq for Partition {}
-
-impl Hash for Partition {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.topic.hash(state);
-        self.index.hash(state);
-    }
-}
 
 impl fmt::Display for Partition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

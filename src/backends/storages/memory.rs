@@ -1,9 +1,9 @@
 use super::{ConsumeError, MessageStorage, TopicDoesNotExist, TopicExists};
 use crate::types::{Message, Partition, Topic};
 use chrono::{DateTime, Utc};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::cmp::Ordering;
 
 struct TopicContent<TPayload: Clone> {
     partition_meta: Vec<Partition>,
@@ -59,10 +59,11 @@ pub struct MemoryMessageStorage<TPayload: Clone> {
 
 impl<TPayload: Clone> Default for MemoryMessageStorage<TPayload> {
     fn default() -> Self {
-        MemoryMessageStorage { topics: HashMap::new() }
+        MemoryMessageStorage {
+            topics: HashMap::new(),
+        }
     }
 }
-
 
 impl<TPayload: Clone> MessageStorage<TPayload> for MemoryMessageStorage<TPayload> {
     fn create_topic(&mut self, topic: Topic, partitions: u16) -> Result<(), TopicExists> {
@@ -122,7 +123,7 @@ impl<TPayload: Clone> MessageStorage<TPayload> for MemoryMessageStorage<TPayload
         match messages.len().cmp(&n_offset) {
             Ordering::Greater => Ok(Some(messages[n_offset].clone())),
             Ordering::Less => Err(ConsumeError::OffsetOutOfRange),
-            Ordering::Equal => Ok(None)
+            Ordering::Equal => Ok(None),
         }
     }
 
