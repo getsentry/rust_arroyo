@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
-use std::fmt;
 use std::any::type_name;
 use std::cmp::Eq;
+use std::fmt;
 use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Debug)]
@@ -57,7 +57,6 @@ pub struct Position {
     pub timestamp: DateTime<Utc>,
 }
 
-
 #[derive(Debug, PartialEq)]
 pub struct Message<T: Clone> {
     pub partition: Partition,
@@ -85,7 +84,7 @@ impl<T: Clone> Message<T> {
                 None => offset + 1,
             },
         }
-    }    
+    }
 }
 
 impl<T: Clone> Clone for Message<T> {
@@ -105,40 +104,34 @@ impl<T: Clone> fmt::Display for Message<T> {
         fn type_of<V>(_: &V) -> String {
             format!("{}", type_name::<V>())
         }
-        
+
         write!(
-            f, 
-            "Message<{}>(partition={}), offset={}", 
-            type_of(&self.payload), 
-            &self.partition, 
+            f,
+            "Message<{}>(partition={}), offset={}",
+            type_of(&self.payload),
+            &self.partition,
             &self.offset
         )
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use chrono::{Utc};
     use super::{Message, Partition, Topic};
+    use chrono::Utc;
     use std::collections::HashMap;
 
     #[test]
     fn message_with_next() {
-        let now = Utc::now(); 
-        let topic = Topic {name: "test".to_string()};
+        let now = Utc::now();
+        let topic = Topic {
+            name: "test".to_string(),
+        };
         let part = Partition {
             topic: topic,
             index: 10,
         };
-        let message = Message::new (
-            part,
-            10,
-            "payload".to_string(),
-            now,
-            Some(20),
-        );
+        let message = Message::new(part, 10, "payload".to_string(), now, Some(20));
 
         assert_eq!(message.partition.topic.name, "test");
         assert_eq!(message.partition.index, 10);
@@ -150,66 +143,73 @@ mod tests {
 
     #[test]
     fn message_without_next() {
-        let now = Utc::now(); 
+        let now = Utc::now();
         let part = Partition {
-            topic: Topic {name: "test".to_string()},
+            topic: Topic {
+                name: "test".to_string(),
+            },
             index: 10,
         };
-        let message = Message::new (
-            part,
-            10,
-            "payload".to_string(),
-            now,
-            None::<u64>,
-        );
+        let message = Message::new(part, 10, "payload".to_string(), now, None::<u64>);
 
         assert_eq!(message.next_offset, 11)
     }
 
     #[test]
     fn fmt_display() {
-        let now = Utc::now(); 
+        let now = Utc::now();
         let part = Partition {
-            topic: Topic {name: "test".to_string()},
+            topic: Topic {
+                name: "test".to_string(),
+            },
             index: 10,
         };
-        let message = Message::new (
-            part,
-            10,
-            "payload".to_string(),
-            now,
-            None::<u64>,
-        );
+        let message = Message::new(part, 10, "payload".to_string(), now, None::<u64>);
 
         assert_eq!(
-            message.to_string(), 
+            message.to_string(),
             "Message<alloc::string::String>(partition=Partition(10 topic=Topic(test))), offset=10"
         )
     }
 
     #[test]
     fn test_eq() {
-        let a = Topic{name: "test".to_string()};
-        let b = Topic{name: "test".to_string()};
+        let a = Topic {
+            name: "test".to_string(),
+        };
+        let b = Topic {
+            name: "test".to_string(),
+        };
         assert!(a == b);
 
-        let c = Topic{name: "test2".to_string()};
+        let c = Topic {
+            name: "test2".to_string(),
+        };
         assert!(a != c);
     }
 
     #[test]
     fn test_hash() {
         let mut content = HashMap::new();
-        content.insert(Topic{name: "test".to_string()}, "test_value".to_string());
+        content.insert(
+            Topic {
+                name: "test".to_string(),
+            },
+            "test_value".to_string(),
+        );
 
-        let b = Topic{name: "test".to_string()};
+        let b = Topic {
+            name: "test".to_string(),
+        };
         let c = content.get(&b).unwrap();
         assert_eq!(&"test_value".to_string(), c);
     }
 
     #[test]
     fn test_clone() {
-        let topic = Topic{name: "test".to_string()};
+        let topic = Topic {
+            name: "test".to_string(),
+        };
         let part = Partition {
             topic: topic,
             index: 10,
@@ -219,17 +219,14 @@ mod tests {
         assert_eq!(part, part2);
         assert_ne!(&part as *const Partition, &part2 as *const Partition);
 
-        let now = Utc::now(); 
-        let message = Message::new (
-            part,
-            10,
-            "payload".to_string(),
-            now,
-            None::<u64>,
-        );
+        let now = Utc::now();
+        let message = Message::new(part, 10, "payload".to_string(), now, None::<u64>);
         let message2 = message.clone();
 
         assert_eq!(message, message2);
-        assert_ne!(&message as *const Message<String>, &message2 as *const Message<String>);
+        assert_ne!(
+            &message as *const Message<String>,
+            &message2 as *const Message<String>
+        );
     }
 }

@@ -1,5 +1,5 @@
-use std::time::{Duration, SystemTime};
 use std::thread::sleep;
+use std::time::{Duration, SystemTime};
 
 pub trait Clock {
     fn time(&self) -> SystemTime;

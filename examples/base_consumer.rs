@@ -1,10 +1,10 @@
 extern crate rust_arroyo;
 
 use rust_arroyo::backends::kafka::KafkaConsumer;
-use std::collections::{HashMap, HashSet};
-use rust_arroyo::backends::{AssignmentCallbacks};
-use rust_arroyo::types::{Partition, Topic, Position};
+use rust_arroyo::backends::AssignmentCallbacks;
 use rust_arroyo::backends::Consumer;
+use rust_arroyo::types::{Partition, Position, Topic};
+use std::collections::{HashMap, HashSet};
 
 struct EmptyCallbacks {}
 impl AssignmentCallbacks for EmptyCallbacks {
@@ -15,18 +15,25 @@ impl AssignmentCallbacks for EmptyCallbacks {
 fn main() {
     let config = HashMap::from([
         ("group.id".to_string(), "my_group".to_string()),
-        ("bootstrap.servers".to_string(), "localhost:9092".to_string()),
+        (
+            "bootstrap.servers".to_string(),
+            "localhost:9092".to_string(),
+        ),
     ]);
     let mut consumer = KafkaConsumer::new("my_group".to_string(), config);
-    let topic = Topic {name: "test_static".to_string()};
-    let res = consumer.subscribe(&vec![topic], Box::new(EmptyCallbacks{}));
+    let topic = Topic {
+        name: "test_static".to_string(),
+    };
+    let res = consumer.subscribe(&vec![topic], Box::new(EmptyCallbacks {}));
     assert_eq!(res.is_ok(), true);
     println!("Subscribed");
     for x in 0..20 {
         println!("Polling");
         let res = consumer.poll(None);
         match res.unwrap() {
-            Some(x) => {println!("MSG {}", x)},
+            Some(x) => {
+                println!("MSG {}", x)
+            }
             None => {}
         }
     }

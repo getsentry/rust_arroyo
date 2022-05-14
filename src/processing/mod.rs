@@ -1,14 +1,14 @@
 pub mod strategies;
 
+use crate::backends::{AssignmentCallbacks, Consumer};
+use crate::types::{Message, Partition, Topic};
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{HashMap};
-use crate::backends::{Consumer, AssignmentCallbacks};
-use strategies::{ProcessingStrategyFactory, ProcessingStrategy};
-use crate::types::{Message, Partition, Topic};
+use std::collections::HashMap;
 use std::mem::replace;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use strategies::{ProcessingStrategy, ProcessingStrategyFactory};
 
 #[derive(Debug, Clone)]
 pub struct InvalidState;
@@ -28,7 +28,7 @@ pub enum RunError {
 
 struct Strategies<TPayload: Clone> {
     processing_factory: Box<dyn ProcessingStrategyFactory<TPayload>>,
-    strategy: Option<Box<dyn ProcessingStrategy<TPayload>>>
+    strategy: Option<Box<dyn ProcessingStrategy<TPayload>>>,
 }
 
 struct Callbacks<TPayload: Clone> {
@@ -38,19 +38,18 @@ struct Callbacks<TPayload: Clone> {
 impl<TPayload: 'static + Clone> AssignmentCallbacks for Callbacks<TPayload> {
     // TODO: Having the initialization of the strategy here
     // means that ProcessingStrategy and ProcessingStrategyFactory
-    // have to be Send and Sync, which is really limiting and unnecessary. 
+    // have to be Send and Sync, which is really limiting and unnecessary.
     // Revisit this so that it is not the callback that perform the
     // initialization.  But we just provide a signal back to the
     // processor to do that.
     fn on_assign(&mut self, _: HashMap<Partition, u64>) {
         let mut stg = self.strategies.lock().unwrap();
         stg.strategy = Some(stg.processing_factory.create());
-
     }
     fn on_revoke(&mut self, _: Vec<Partition>) {
         let mut stg = self.strategies.lock().unwrap();
         match stg.strategy.as_mut() {
-            None => {},
+            None => {}
             Some(s) => {
                 s.close();
                 s.join(None);
@@ -61,11 +60,9 @@ impl<TPayload: 'static + Clone> AssignmentCallbacks for Callbacks<TPayload> {
 }
 
 impl<TPayload: Clone> Callbacks<TPayload> {
-    pub fn new(
-        strategies: Arc<Mutex<Strategies<TPayload>>>
-    ) -> Self {
-        Self{
-            strategies: strategies
+    pub fn new(strategies: Arc<Mutex<Strategies<TPayload>>>) -> Self {
+        Self {
+            strategies: strategies,
         }
     }
 }
@@ -78,7 +75,7 @@ pub struct StreamProcessor<'a, TPayload: Clone> {
     consumer: Box<dyn Consumer<'a, TPayload> + 'a>,
     strategies: Arc<Mutex<Strategies<TPayload>>>,
     message: Option<Message<TPayload>>,
-    shutdown_requested: bool, 
+    shutdown_requested: bool,
 }
 
 impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
@@ -86,12 +83,11 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         consumer: Box<dyn Consumer<'a, TPayload> + 'a>,
         processing_factory: Box<dyn ProcessingStrategyFactory<TPayload>>,
     ) -> Self {
-        let strategies = 
-            Arc::new(Mutex::new(Strategies{
-                processing_factory: processing_factory,
-                strategy: None,
-            }));
-        
+        let strategies = Arc::new(Mutex::new(Strategies {
+            processing_factory: processing_factory,
+            strategy: None,
+        }));
+
         Self {
             consumer: consumer,
             strategies: strategies,
@@ -101,7 +97,8 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     }
 
     pub fn subscribe(&mut self, topic: Topic) {
-        let callbacks: Box<dyn AssignmentCallbacks> = Box::new(Callbacks::new(self.strategies.clone()));
+        let callbacks: Box<dyn AssignmentCallbacks> =
+            Box::new(Callbacks::new(self.strategies.clone()));
         let _ = self.consumer.subscribe(&vec![topic], callbacks);
     }
 
@@ -113,8 +110,8 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
             // should be paused and not returning any messages on ``poll``.
             let res = self.consumer.poll(Some(0.0)).unwrap();
             match res {
-                None => {},
-                Some(x) => {return Err(RunError::InvalidState)}
+                None => {}
+                Some(x) => return Err(RunError::InvalidState),
             }
         } else {
             // Otherwise, we need to try fetch a new message from the consumer,
@@ -122,24 +119,21 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
             let msg = self.consumer.poll(Some(1.0));
             //TODO: Support errors properly
             match msg {
-                Ok(m) => {self.message = m},
-                Err(e) => {return Err(RunError::PollError)},
+                Ok(m) => self.message = m,
+                Err(e) => return Err(RunError::PollError),
             }
         }
 
         let mut trait_callbacks = self.strategies.lock().unwrap();
         match trait_callbacks.strategy.as_mut() {
-            None => {
-                match self.message.as_ref() {
-                    None => {},
-                    Some(x) => {
-                        return Err(RunError::InvalidState)}
-                }
+            None => match self.message.as_ref() {
+                None => {}
+                Some(x) => return Err(RunError::InvalidState),
             },
             Some(strategy) => {
                 let commit_request = strategy.poll();
                 match commit_request {
-                    None => {},
+                    None => {}
                     Some(request) => {
                         self.consumer.stage_positions(request.positions).unwrap();
                         self.consumer.commit_position().unwrap();
@@ -150,37 +144,31 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
                 if msg.is_some() {
                     let ret = strategy.submit(msg.unwrap());
                     match ret {
-                        Ok(()) => {},
+                        Ok(()) => {}
                         Err(_) => {
                             // If the processing strategy rejected our message, we need
                             // to pause the consumer and hold the message until it is
                             // accepted, at which point we can resume consuming.
-                            let partitions = self.consumer
-                                .tell()
-                                .unwrap()
-                                .keys()
-                                .cloned()
-                                .collect();
+                            let partitions =
+                                self.consumer.tell().unwrap().keys().cloned().collect();
                             if message_carried_over {
                                 let res = self.consumer.pause(partitions);
                                 match res {
-                                    Ok(()) => {},
-                                    Err(x) => {return Err(RunError::PauseError)}
+                                    Ok(()) => {}
+                                    Err(x) => return Err(RunError::PauseError),
                                 }
                             } else {
                                 let res = self.consumer.resume(partitions);
                                 match res {
-                                    Ok(()) => {},
-                                    Err(x) => {return Err(RunError::PauseError)}
+                                    Ok(()) => {}
+                                    Err(x) => return Err(RunError::PauseError),
                                 }
                             }
-                        },
+                        }
                     }
                 }
-                
-                
-            },
-        }        
+            }
+        }
         Ok(())
     }
 
@@ -189,21 +177,20 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         while !self.shutdown_requested {
             let ret = self.run_once();
             match ret {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => {
                     let mut trait_callbacks = self.strategies.lock().unwrap();
-                    
+
                     match trait_callbacks.strategy.as_mut() {
-                        None => {},
+                        None => {}
                         Some(strategy) => {
                             strategy.terminate();
                         }
                     }
                     self.consumer.close(None);
-                    return Err(e)
+                    return Err(e);
                 }
             }
-            
         }
         self.shutdown();
         Ok(())
@@ -224,51 +211,46 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap};
+    use super::strategies::{
+        CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
+    };
+    use super::{RunError, StreamProcessor};
     use crate::backends::local::broker::LocalBroker;
-    use crate::backends::storages::memory::MemoryMessageStorage;
-    use crate::utils::clock::SystemClock;
-    use crate::types::{Topic, Message, Partition, Position};
     use crate::backends::local::LocalConsumer;
-    use uuid::Uuid;
-    use super::strategies::{ProcessingStrategyFactory, 
-        ProcessingStrategy, CommitRequest, MessageRejected};
-    use super::{StreamProcessor, RunError};
+    use crate::backends::storages::memory::MemoryMessageStorage;
     use crate::backends::Consumer;
+    use crate::types::{Message, Partition, Position, Topic};
+    use crate::utils::clock::SystemClock;
+    use std::collections::HashMap;
+    use uuid::Uuid;
 
     struct TestStrategy {
-        message: Option<Message<String>>
+        message: Option<Message<String>>,
     }
     impl ProcessingStrategy<String> for TestStrategy {
         fn poll(&mut self) -> Option<CommitRequest> {
             match self.message.as_ref() {
-                None => {None},
-                Some(message) => {Some(CommitRequest{
-                    positions: HashMap::from([
-                        (
-                            message.partition.clone(), 
-                            Position{offset: message.offset, timestamp: message.timestamp}
-                        ),
-                    ])
-                })},
+                None => None,
+                Some(message) => Some(CommitRequest {
+                    positions: HashMap::from([(
+                        message.partition.clone(),
+                        Position {
+                            offset: message.offset,
+                            timestamp: message.timestamp,
+                        },
+                    )]),
+                }),
             }
         }
 
-        fn submit(
-            &mut self, 
-            message: Message<String>,
-        ) -> Result<(), MessageRejected> {
+        fn submit(&mut self, message: Message<String>) -> Result<(), MessageRejected> {
             self.message = Some(message.clone());
             Ok(())
         }
 
-        fn close(&mut self) {
+        fn close(&mut self) {}
 
-        }
-
-        fn terminate(&mut self) {
-
-        }
+        fn terminate(&mut self) {}
 
         fn join(&mut self, timeout: Option<f64>) -> Option<CommitRequest> {
             None
@@ -277,19 +259,19 @@ mod tests {
 
     struct TestFactory {}
     impl ProcessingStrategyFactory<String> for TestFactory {
-        fn create(
-            &self, 
-        ) -> Box<dyn ProcessingStrategy<String>> {
-            Box::new(TestStrategy{message:None})
+        fn create(&self) -> Box<dyn ProcessingStrategy<String>> {
+            Box::new(TestStrategy { message: None })
         }
     }
 
     fn build_broker() -> LocalBroker<String> {
         let storage: MemoryMessageStorage<String> = MemoryMessageStorage::new();
-        let clock = SystemClock{};
+        let clock = SystemClock {};
         let mut broker = LocalBroker::new(Box::new(storage), Box::new(clock));
 
-        let topic1 = Topic {name: "test1".to_string()};
+        let topic1 = Topic {
+            name: "test1".to_string(),
+        };
 
         let _ = broker.create_topic(topic1.clone(), 1);
         broker
@@ -302,14 +284,13 @@ mod tests {
             Uuid::nil(),
             &mut broker,
             "test_group".to_string(),
-            false,                 
+            false,
         ));
-        
-        let mut processor = StreamProcessor::new(
-            consumer,
-            Box::new(TestFactory{})
-        );
-        processor.subscribe(Topic {name: "test1".to_string()});
+
+        let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
+        processor.subscribe(Topic {
+            name: "test1".to_string(),
+        });
         let res = processor.run_once();
         assert_eq!(res.is_ok(), true)
     }
@@ -317,35 +298,34 @@ mod tests {
     #[test]
     fn test_consume() {
         let mut broker = build_broker();
-        let topic1 = Topic {name: "test1".to_string()};
-        let partition = Partition{
+        let topic1 = Topic {
+            name: "test1".to_string(),
+        };
+        let partition = Partition {
             topic: topic1.clone(),
             index: 0,
         };
         let _ = broker.produce(&partition, "message1".to_string());
         let _ = broker.produce(&partition, "message2".to_string());
-        
+
         let consumer = Box::new(LocalConsumer::new(
             Uuid::nil(),
             &mut broker,
             "test_group".to_string(),
-            false,                 
+            false,
         ));
 
-        let mut processor = StreamProcessor::new(
-            consumer,
-            Box::new(TestFactory{})
-        );
-        processor.subscribe(Topic {name: "test1".to_string()});
+        let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
+        processor.subscribe(Topic {
+            name: "test1".to_string(),
+        });
         let res = processor.run_once();
         assert_eq!(res.is_ok(), true);
         let res = processor.run_once();
         assert_eq!(res.is_ok(), true);
-        
-        let expected = HashMap::from([
-            (partition, 2 as u64)
-        ]);
-        
+
+        let expected = HashMap::from([(partition, 2 as u64)]);
+
         assert_eq!(processor.tell(), expected)
     }
 }

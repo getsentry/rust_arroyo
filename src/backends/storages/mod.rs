@@ -1,6 +1,6 @@
 pub mod memory;
-use chrono::{DateTime, Utc};
 use super::super::types::{Message, Partition, Topic};
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
 pub struct TopicExists;
@@ -22,7 +22,6 @@ pub enum ConsumeError {
 }
 
 pub trait MessageStorage<TPayload: Clone> {
-
     // Create a topic with the given number of partitions.
     //
     // If the topic already exists, a ``TopicExists`` exception will be
@@ -42,7 +41,7 @@ pub trait MessageStorage<TPayload: Clone> {
     //
     // If the topic does not exist, a ``TopicDoesNotExist`` exception will
     // be raised.
-    fn get_partition_count(&self, topic: &Topic)  -> Result<u16, TopicDoesNotExist>;
+    fn get_partition_count(&self, topic: &Topic) -> Result<u16, TopicDoesNotExist>;
 
     fn get_partition(&self, topic: &Topic, index: u16) -> Result<Partition, ConsumeError>;
 
@@ -58,8 +57,8 @@ pub trait MessageStorage<TPayload: Clone> {
     // be raised. If the topic exists but the partition does not, a
     // ``PartitionDoesNotExist`` exception will be raised.
     fn consume(
-        &self, 
-        partition: &Partition, 
+        &self,
+        partition: &Partition,
         offset: u64,
     ) -> Result<Option<Message<TPayload>>, ConsumeError>;
 
@@ -69,9 +68,9 @@ pub trait MessageStorage<TPayload: Clone> {
     // be raised. If the topic exists but the partition does not, a
     // ``PartitionDoesNotExist`` exception will be raised.
     fn produce(
-        &mut self, 
-        partition: &Partition, 
-        payload: TPayload, 
+        &mut self,
+        partition: &Partition,
+        payload: TPayload,
         timestamp: DateTime<Utc>,
     ) -> Result<u64, ConsumeError>;
 }
