@@ -12,7 +12,7 @@ use rdkafka::message::{Message, OwnedMessage};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 
 struct CustomContext {
@@ -78,6 +78,7 @@ pub struct KafkaConsumer {
     // So we need to build the kafka consumer upon subscribe and not
     // in the constructor.
     consumer: Option<BaseConsumer<CustomContext>>,
+    #[allow(dead_code)]
     group: String,
     config: HashMap<String, String>,
     staged_offsets: HashMap<Partition, Position>,
@@ -112,7 +113,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
             .create_with_context(context)
             .expect("Consumer creation failed");
         let topic_str: Vec<&str> = topics.into_iter().map(|t| t.name.as_ref()).collect();
-        let res = consumer
+        consumer
             .subscribe(&topic_str)
             .expect("Can't subscribe to specified topics");
         self.consumer = Some(consumer);
@@ -125,7 +126,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
 
     fn poll(
         &mut self,
-        timeout: Option<f64>,
+        _: Option<f64>,
     ) -> Result<Option<ArroyoMessage<OwnedMessage>>, PollError> {
         match self.consumer.as_mut() {
             None => Err(PollError::ConsumerClosed),
@@ -158,19 +159,19 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
                                 None,
                             )))
                         }
-                        Err(x) => Err(PollError::ConsumerClosed),
+                        Err(_) => Err(PollError::ConsumerClosed),
                     },
                 }
             }
         }
     }
 
-    fn pause(&mut self, partitions: HashSet<Partition>) -> Result<(), PauseError> {
+    fn pause(&mut self, _: HashSet<Partition>) -> Result<(), PauseError> {
         //TODO: Implement this
         Ok(())
     }
 
-    fn resume(&mut self, partitions: HashSet<Partition>) -> Result<(), PauseError> {
+    fn resume(&mut self, _: HashSet<Partition>) -> Result<(), PauseError> {
         //TODO: Implement this
         Ok(())
     }
@@ -216,8 +217,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
             }
             Some(consumer) => {
                 let partitions = TopicPartitionList::from_topic_map(&map).unwrap();
-                let res = consumer.commit(&partitions, CommitMode::Sync);
-                let ret: HashMap<Partition, Position> = HashMap::new();
+                let _ = consumer.commit(&partitions, CommitMode::Sync);
             }
         };
         Ok(HashMap::new())
@@ -235,11 +235,9 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
 
 #[cfg(test)]
 mod tests {
-    use super::super::Consumer;
     use super::AssignmentCallbacks;
-    use super::KafkaConsumer;
-    use crate::types::{Partition, Position, Topic};
-    use std::collections::{HashMap, HashSet};
+    use crate::types::{Partition};
+    use std::collections::HashMap;
 
     struct EmptyCallbacks {}
     impl AssignmentCallbacks for EmptyCallbacks {

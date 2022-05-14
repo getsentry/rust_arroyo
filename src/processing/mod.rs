@@ -2,11 +2,8 @@ pub mod strategies;
 
 use crate::backends::{AssignmentCallbacks, Consumer};
 use crate::types::{Message, Partition, Topic};
-use std::any::Any;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem::replace;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use strategies::{ProcessingStrategy, ProcessingStrategyFactory};
 
@@ -111,7 +108,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
             let res = self.consumer.poll(Some(0.0)).unwrap();
             match res {
                 None => {}
-                Some(x) => return Err(RunError::InvalidState),
+                Some(_) => return Err(RunError::InvalidState),
             }
         } else {
             // Otherwise, we need to try fetch a new message from the consumer,
@@ -120,7 +117,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
             //TODO: Support errors properly
             match msg {
                 Ok(m) => self.message = m,
-                Err(e) => return Err(RunError::PollError),
+                Err(_) => return Err(RunError::PollError),
             }
         }
 
@@ -128,7 +125,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         match trait_callbacks.strategy.as_mut() {
             None => match self.message.as_ref() {
                 None => {}
-                Some(x) => return Err(RunError::InvalidState),
+                Some(_) => return Err(RunError::InvalidState),
             },
             Some(strategy) => {
                 let commit_request = strategy.poll();
@@ -155,13 +152,13 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
                                 let res = self.consumer.pause(partitions);
                                 match res {
                                     Ok(()) => {}
-                                    Err(x) => return Err(RunError::PauseError),
+                                    Err(_) => return Err(RunError::PauseError),
                                 }
                             } else {
                                 let res = self.consumer.resume(partitions);
                                 match res {
                                     Ok(()) => {}
-                                    Err(x) => return Err(RunError::PauseError),
+                                    Err(_) => return Err(RunError::PauseError),
                                 }
                             }
                         }
@@ -214,11 +211,10 @@ mod tests {
     use super::strategies::{
         CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
     };
-    use super::{RunError, StreamProcessor};
+    use super::StreamProcessor;
     use crate::backends::local::broker::LocalBroker;
     use crate::backends::local::LocalConsumer;
     use crate::backends::storages::memory::MemoryMessageStorage;
-    use crate::backends::Consumer;
     use crate::types::{Message, Partition, Position, Topic};
     use crate::utils::clock::SystemClock;
     use std::collections::HashMap;
@@ -252,7 +248,7 @@ mod tests {
 
         fn terminate(&mut self) {}
 
-        fn join(&mut self, timeout: Option<f64>) -> Option<CommitRequest> {
+        fn join(&mut self, _: Option<f64>) -> Option<CommitRequest> {
             None
         }
     }

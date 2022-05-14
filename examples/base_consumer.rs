@@ -3,8 +3,8 @@ extern crate rust_arroyo;
 use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::backends::AssignmentCallbacks;
 use rust_arroyo::backends::Consumer;
-use rust_arroyo::types::{Partition, Position, Topic};
-use std::collections::{HashMap, HashSet};
+use rust_arroyo::types::{Partition, Topic};
+use std::collections::HashMap;
 
 struct EmptyCallbacks {}
 impl AssignmentCallbacks for EmptyCallbacks {
@@ -27,7 +27,7 @@ fn main() {
     let res = consumer.subscribe(&vec![topic], Box::new(EmptyCallbacks {}));
     assert_eq!(res.is_ok(), true);
     println!("Subscribed");
-    for x in 0..20 {
+    for _ in 0..20 {
         println!("Polling");
         let res = consumer.poll(None);
         match res.unwrap() {

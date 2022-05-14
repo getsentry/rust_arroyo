@@ -4,7 +4,6 @@ use super::storages::{PartitionDoesNotExist, TopicDoesNotExist};
 use super::{AssignmentCallbacks, ConsumeError, Consumer, ConsumerClosed, PauseError, PollError};
 use crate::types::{Message, Partition, Position, Topic};
 use broker::LocalBroker;
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
@@ -319,8 +318,6 @@ mod tests {
     use crate::types::{Partition, Position, Topic};
     use crate::utils::clock::SystemClock;
     use chrono::Utc;
-    use std::any::Any;
-    use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
     use uuid::Uuid;
 
@@ -501,7 +498,7 @@ mod tests {
         let _ = broker.produce(&partition, "message1".to_string());
         let _ = broker.produce(&partition, "message2".to_string());
 
-        struct TheseCallbacks {};
+        struct TheseCallbacks {}
         impl AssignmentCallbacks for TheseCallbacks {
             fn on_assign(&mut self, partitions: HashMap<Partition, u64>) {
                 let topic2 = Topic {
