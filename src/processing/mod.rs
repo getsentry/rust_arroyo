@@ -58,9 +58,7 @@ impl<TPayload: 'static + Clone> AssignmentCallbacks for Callbacks<TPayload> {
 
 impl<TPayload: Clone> Callbacks<TPayload> {
     pub fn new(strategies: Arc<Mutex<Strategies<TPayload>>>) -> Self {
-        Self {
-            strategies: strategies,
-        }
+        Self { strategies }
     }
 }
 
@@ -81,13 +79,13 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         processing_factory: Box<dyn ProcessingStrategyFactory<TPayload>>,
     ) -> Self {
         let strategies = Arc::new(Mutex::new(Strategies {
-            processing_factory: processing_factory,
+            processing_factory,
             strategy: None,
         }));
 
         Self {
-            consumer: consumer,
-            strategies: strategies,
+            consumer,
+            strategies,
             message: None,
             shutdown_requested: false,
         }
@@ -96,7 +94,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     pub fn subscribe(&mut self, topic: Topic) {
         let callbacks: Box<dyn AssignmentCallbacks> =
             Box::new(Callbacks::new(self.strategies.clone()));
-        let _ = self.consumer.subscribe(&vec![topic], callbacks);
+        let _ = self.consumer.subscribe(&[topic], callbacks);
     }
 
     pub fn run_once(&mut self) -> Result<(), RunError> {
@@ -138,8 +136,8 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
                 };
 
                 let msg = replace(&mut self.message, None);
-                if msg.is_some() {
-                    let ret = strategy.submit(msg.unwrap());
+                if let Some(msg_s) = msg {
+                    let ret = strategy.submit(msg_s);
                     match ret {
                         Ok(()) => {}
                         Err(_) => {
@@ -240,7 +238,7 @@ mod tests {
         }
 
         fn submit(&mut self, message: Message<String>) -> Result<(), MessageRejected> {
-            self.message = Some(message.clone());
+            self.message = Some(message);
             Ok(())
         }
 
@@ -261,7 +259,7 @@ mod tests {
     }
 
     fn build_broker() -> LocalBroker<String> {
-        let storage: MemoryMessageStorage<String> = MemoryMessageStorage::new();
+        let storage: MemoryMessageStorage<String> = Default::default();
         let clock = SystemClock {};
         let mut broker = LocalBroker::new(Box::new(storage), Box::new(clock));
 
@@ -269,7 +267,7 @@ mod tests {
             name: "test1".to_string(),
         };
 
-        let _ = broker.create_topic(topic1.clone(), 1);
+        let _ = broker.create_topic(topic1, 1);
         broker
     }
 
@@ -288,7 +286,7 @@ mod tests {
             name: "test1".to_string(),
         });
         let res = processor.run_once();
-        assert_eq!(res.is_ok(), true)
+        assert!(res.is_ok())
     }
 
     #[test]
@@ -298,7 +296,7 @@ mod tests {
             name: "test1".to_string(),
         };
         let partition = Partition {
-            topic: topic1.clone(),
+            topic: topic1,
             index: 0,
         };
         let _ = broker.produce(&partition, "message1".to_string());
@@ -316,11 +314,11 @@ mod tests {
             name: "test1".to_string(),
         });
         let res = processor.run_once();
-        assert_eq!(res.is_ok(), true);
+        assert!(res.is_ok());
         let res = processor.run_once();
-        assert_eq!(res.is_ok(), true);
+        assert!(res.is_ok());
 
-        let expected = HashMap::from([(partition, 2 as u64)]);
+        let expected = HashMap::from([(partition, 2)]);
 
         assert_eq!(processor.tell(), expected)
     }

@@ -16,8 +16,8 @@ pub struct LocalBroker<TPayload: Clone> {
 impl<TPayload: Clone> LocalBroker<TPayload> {
     pub fn new(storage: Box<dyn MessageStorage<TPayload>>, clock: Box<dyn Clock>) -> Self {
         Self {
-            storage: storage,
-            clock: clock,
+            storage,
+            clock,
             offsets: HashMap::new(),
             subscriptions: HashMap::new(),
         }
@@ -49,12 +49,10 @@ impl<TPayload: Clone> LocalBroker<TPayload> {
     ) -> Result<HashMap<Partition, u64>, SubscriptionError> {
         // Handle rebalancing request which is not supported
         let group_subscriptions = self.subscriptions.get(&consumer_group);
-        if group_subscriptions.is_some() {
-            let consumer_subscription = group_subscriptions.unwrap().get(&consumer_id);
-            if consumer_subscription.is_none() {
-                return Err(SubscriptionError::RebalanceNotSupported);
-            } else {
-                let subscribed_topics = consumer_subscription.unwrap();
+        if let Some(group_s) = group_subscriptions {
+            let consumer_subscription = group_s.get(&consumer_id);
+            if let Some(consume_subs) = consumer_subscription {
+                let subscribed_topics = consume_subs;
                 let mut non_matches = subscribed_topics
                     .iter()
                     .zip(&topics)
@@ -62,6 +60,8 @@ impl<TPayload: Clone> LocalBroker<TPayload> {
                 if non_matches.next().is_some() {
                     return Err(SubscriptionError::RebalanceNotSupported);
                 }
+            } else {
+                return Err(SubscriptionError::RebalanceNotSupported);
             }
         }
 
@@ -79,7 +79,7 @@ impl<TPayload: Clone> LocalBroker<TPayload> {
                     let p = self.storage.get_partition(topic, n).unwrap();
                     let offset = match self.offsets[&consumer_group].get(&p) {
                         None => 0,
-                        Some(x) => x.clone(),
+                        Some(x) => *x,
                     };
                     assignments.insert(p, offset);
                 }
@@ -130,8 +130,8 @@ impl<TPayload: Clone> LocalBroker<TPayload> {
         self.storage.consume(partition, offset)
     }
 
-    pub fn commit(&mut self, consumer_group: &String, offsets: HashMap<Partition, u64>) {
-        self.offsets.insert(consumer_group.clone(), offsets);
+    pub fn commit(&mut self, consumer_group: &str, offsets: HashMap<Partition, u64>) {
+        self.offsets.insert(consumer_group.to_string(), offsets);
     }
 }
 
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_topic_creation() {
-        let storage: MemoryMessageStorage<String> = MemoryMessageStorage::new();
+        let storage: MemoryMessageStorage<String> = Default::default();
         let clock = SystemClock {};
         let mut broker = LocalBroker::new(Box::new(storage), Box::new(clock));
 
@@ -154,10 +154,10 @@ mod tests {
             name: "test".to_string(),
         };
         let res = broker.create_topic(topic.clone(), 16);
-        assert_eq!(res.is_ok(), true);
+        assert!(res.is_ok());
 
         let res2 = broker.create_topic(topic.clone(), 16);
-        assert_eq!(res2.is_ok(), false);
+        assert!(res2.is_err());
 
         let partitions = broker.get_topic_partition_count(&topic);
         assert_eq!(partitions.unwrap(), 16);
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn test_produce_consume() {
-        let storage: MemoryMessageStorage<String> = MemoryMessageStorage::new();
+        let storage: MemoryMessageStorage<String> = Default::default();
         let clock = SystemClock {};
         let mut broker = LocalBroker::new(Box::new(storage), Box::new(clock));
 
@@ -182,7 +182,7 @@ mod tests {
             1,
         );
         let r_prod = broker.produce(&partition, "message".to_string());
-        assert_eq!(r_prod.is_ok(), true);
+        assert!(r_prod.is_ok());
         assert_eq!(r_prod.unwrap(), 0);
 
         let message = broker.consume(&partition, 0).unwrap().unwrap();
@@ -192,7 +192,7 @@ mod tests {
     }
 
     fn build_broker() -> LocalBroker<String> {
-        let storage: MemoryMessageStorage<String> = MemoryMessageStorage::new();
+        let storage: MemoryMessageStorage<String> = Default::default();
         let clock = SystemClock {};
         let mut broker = LocalBroker::new(Box::new(storage), Box::new(clock));
 
@@ -203,8 +203,8 @@ mod tests {
             name: "test2".to_string(),
         };
 
-        let _ = broker.create_topic(topic1.clone(), 2);
-        let _ = broker.create_topic(topic2.clone(), 1);
+        let _ = broker.create_topic(topic1, 2);
+        let _ = broker.create_topic(topic2, 1);
         broker
     }
 
@@ -224,7 +224,7 @@ mod tests {
             "group".to_string(),
             vec![topic1.clone(), topic2.clone()],
         );
-        assert_eq!(r_assignments.is_ok(), true);
+        assert!(r_assignments.is_ok());
         let expected = HashMap::from([
             (
                 Partition {
@@ -251,18 +251,18 @@ mod tests {
         assert_eq!(r_assignments.unwrap(), expected);
 
         let unassignmnts = broker.unsubscribe(Uuid::nil(), "group".to_string());
-        assert_eq!(unassignmnts.is_ok(), true);
+        assert!(unassignmnts.is_ok());
         let expected = vec![
             Partition {
                 topic: topic1.clone(),
                 index: 0,
             },
             Partition {
-                topic: topic1.clone(),
+                topic: topic1,
                 index: 1,
             },
             Partition {
-                topic: topic2.clone(),
+                topic: topic2,
                 index: 0,
             },
         ];

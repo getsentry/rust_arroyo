@@ -1,6 +1,7 @@
 use super::{ConsumeError, MessageStorage, TopicDoesNotExist, TopicExists};
 use crate::types::{Message, Partition, Topic};
 use chrono::{DateTime, Utc};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
@@ -56,9 +57,9 @@ pub struct MemoryMessageStorage<TPayload: Clone> {
     topics: HashMap<Topic, TopicContent<TPayload>>,
 }
 
-impl<TPayload: Clone> MemoryMessageStorage<TPayload> {
-    pub fn new() -> Self {
-        Self {
+impl<TPayload: Clone> Default for MemoryMessageStorage<TPayload> {
+    fn default() -> Self {
+        MemoryMessageStorage {
             topics: HashMap::new(),
         }
     }
@@ -119,12 +120,10 @@ impl<TPayload: Clone> MessageStorage<TPayload> for MemoryMessageStorage<TPayload
     ) -> Result<Option<Message<TPayload>>, ConsumeError> {
         let n_offset = usize::try_from(offset).unwrap();
         let messages = self.topics[&partition.topic].get_messages(partition)?;
-        if messages.len() == n_offset {
-            Ok(None)
-        } else if messages.len() > n_offset {
-            Ok(Some(messages[n_offset].clone()))
-        } else {
-            Err(ConsumeError::OffsetOutOfRange)
+        match messages.len().cmp(&n_offset) {
+            Ordering::Greater => Ok(Some(messages[n_offset].clone())),
+            Ordering::Less => Err(ConsumeError::OffsetOutOfRange),
+            Ordering::Equal => Ok(None),
         }
     }
 
@@ -192,10 +191,10 @@ mod tests {
         };
         let topic: TopicContent<String> = TopicContent::new(&t, 2);
         let p1 = Partition {
-            topic: t.clone(),
+            topic: t,
             index: 10,
         };
-        assert_eq!(topic.get_messages(&p1).is_err(), true);
+        assert!(topic.get_messages(&p1).is_err());
     }
 
     #[test]
@@ -219,7 +218,7 @@ mod tests {
             },
             index: 0,
         };
-        assert_eq!(res.is_ok(), true);
+        assert!(res.is_ok());
         assert_eq!(topic.get_messages(&p0).unwrap().len(), 1);
 
         let queue = topic.get_messages(&p0).unwrap();
@@ -236,14 +235,14 @@ mod tests {
 
     #[test]
     fn create_manage_topic() {
-        let mut m: MemoryMessageStorage<String> = MemoryMessageStorage::new();
+        let mut m: MemoryMessageStorage<String> = Default::default();
         let res = m.create_topic(
             Topic {
                 name: "test".to_string(),
             },
             16,
         );
-        assert_eq!(res.is_ok(), true);
+        assert!(res.is_ok());
         let b = m.list_topics();
         assert_eq!(b.len(), 1);
         assert_eq!(b[0].name, "test".to_string());
@@ -252,14 +251,14 @@ mod tests {
             name: "test".to_string(),
         };
         let res2 = m.delete_topic(&t);
-        assert_eq!(res2.is_ok(), true);
+        assert!(res2.is_ok());
         let b2 = m.list_topics();
         assert_eq!(b2.len(), 0);
     }
 
     #[test]
     fn test_mem_partition_count() {
-        let mut m: MemoryMessageStorage<String> = MemoryMessageStorage::new();
+        let mut m: MemoryMessageStorage<String> = Default::default();
         let _ = m.create_topic(
             Topic {
                 name: "test".to_string(),
@@ -278,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_consume_empty() {
-        let mut m: MemoryMessageStorage<String> = MemoryMessageStorage::new();
+        let mut m: MemoryMessageStorage<String> = Default::default();
         let _ = m.create_topic(
             Topic {
                 name: "test".to_string(),
@@ -292,16 +291,16 @@ mod tests {
             index: 0,
         };
         let message = m.consume(&p, 0);
-        assert_eq!(message.is_ok(), true);
-        assert_eq!(message.unwrap().is_none(), true);
+        assert!(message.is_ok());
+        assert!(message.unwrap().is_none());
 
         let err = m.consume(&p, 1);
-        assert_eq!(err.is_err(), true);
+        assert!(err.is_err());
     }
 
     #[test]
     fn test_produce() {
-        let mut m: MemoryMessageStorage<String> = MemoryMessageStorage::new();
+        let mut m: MemoryMessageStorage<String> = Default::default();
         let _ = m.create_topic(
             Topic {
                 name: "test".to_string(),
@@ -319,12 +318,12 @@ mod tests {
         assert_eq!(offset, 0);
 
         let msg_c = m.consume(&p, 0).unwrap();
-        assert_eq!(msg_c.is_some(), true);
+        assert!(msg_c.is_some());
         let existing_msg = msg_c.unwrap();
         assert_eq!(existing_msg.offset, 0);
         assert_eq!(existing_msg.payload, "test".to_string());
 
         let msg_none = m.consume(&p, 1).unwrap();
-        assert_eq!(msg_none.is_some(), false);
+        assert!(msg_none.is_some());
     }
 }

@@ -75,10 +75,10 @@ impl<T: Clone> Message<T> {
         next_offset: Option<u64>,
     ) -> Self {
         Self {
-            partition: partition,
-            offset: offset,
-            payload: payload,
-            timestamp: timestamp,
+            partition,
+            offset,
+            payload,
+            timestamp,
             next_offset: match next_offset {
                 Some(v) => v,
                 None => offset + 1,
@@ -93,7 +93,7 @@ impl<T: Clone> Clone for Message<T> {
             self.partition.clone(),
             self.offset,
             self.payload.clone(),
-            self.timestamp.clone(),
+            self.timestamp,
             Some(self.next_offset),
         )
     }
@@ -102,7 +102,7 @@ impl<T: Clone> Clone for Message<T> {
 impl<T: Clone> fmt::Display for Message<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fn type_of<V>(_: &V) -> String {
-            format!("{}", type_name::<V>())
+            type_name::<V>().to_owned()
         }
 
         write!(
@@ -127,10 +127,7 @@ mod tests {
         let topic = Topic {
             name: "test".to_string(),
         };
-        let part = Partition {
-            topic: topic,
-            index: 10,
-        };
+        let part = Partition { topic, index: 10 };
         let message = Message::new(part, 10, "payload".to_string(), now, Some(20));
 
         assert_eq!(message.partition.topic.name, "test");
@@ -210,10 +207,7 @@ mod tests {
         let topic = Topic {
             name: "test".to_string(),
         };
-        let part = Partition {
-            topic: topic,
-            index: 10,
-        };
+        let part = Partition { topic, index: 10 };
 
         let part2 = part.clone();
         assert_eq!(part, part2);

@@ -79,7 +79,7 @@ pub trait AssignmentCallbacks: Send + Sync {
 pub trait Consumer<'a, TPayload: Clone> {
     fn subscribe(
         &mut self,
-        topic: &Vec<Topic>,
+        topic: &[Topic],
         callbacks: Box<dyn AssignmentCallbacks>,
     ) -> Result<(), ConsumerClosed>;
 

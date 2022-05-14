@@ -88,8 +88,8 @@ impl KafkaConsumer {
     pub fn new(group: String, config: HashMap<String, String>) -> Self {
         Self {
             consumer: None,
-            group: group,
-            config: config,
+            group,
+            config,
             staged_offsets: HashMap::new(),
         }
     }
@@ -98,7 +98,7 @@ impl KafkaConsumer {
 impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
     fn subscribe(
         &mut self,
-        topics: &Vec<Topic>,
+        topics: &[Topic],
         callbacks: Box<dyn AssignmentCallbacks>,
     ) -> Result<(), ConsumerClosed> {
         let context = CustomContext {
@@ -112,7 +112,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
             .set_log_level(RDKafkaLogLevel::Debug)
             .create_with_context(context)
             .expect("Consumer creation failed");
-        let topic_str: Vec<&str> = topics.into_iter().map(|t| t.name.as_ref()).collect();
+        let topic_str: Vec<&str> = topics.iter().map(|t| t.name.as_ref()).collect();
         consumer
             .subscribe(&topic_str)
             .expect("Can't subscribe to specified topics");
@@ -138,13 +138,10 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
                                 name: owned.topic().to_string(),
                             };
                             let partition = Partition {
-                                topic: topic,
+                                topic,
                                 index: owned.partition() as u16,
                             };
-                            let time_millis = match owned.timestamp().to_millis() {
-                                Some(x) => x,
-                                None => 0,
-                            };
+                            let time_millis = owned.timestamp().to_millis().unwrap_or(0);
                             Ok(Some(ArroyoMessage::new(
                                 partition,
                                 owned.offset() as u64,
