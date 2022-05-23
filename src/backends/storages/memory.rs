@@ -143,7 +143,6 @@ impl<TPayload: Clone> MessageStorage<TPayload> for MemoryMessageStorage<TPayload
             u64::try_from(offset).unwrap(),
             payload,
             timestamp,
-            None::<u64>,
         ));
         Ok(u64::try_from(offset).unwrap())
     }
@@ -210,7 +209,7 @@ mod tests {
             },
             index: 0,
         };
-        let res = topic.add_message(Message::new(p, 10, "payload".to_string(), now, None::<u64>));
+        let res = topic.add_message(Message::new(p, 10, "payload".to_string(), now));
 
         let p0 = Partition {
             topic: Topic {
