@@ -56,7 +56,6 @@ pub struct Message<T: Clone> {
     pub offset: u64,
     pub payload: T,
     pub timestamp: DateTime<Utc>,
-    pub next_offset: u64,
 }
 
 impl<T: Clone> Message<T> {
@@ -66,8 +65,10 @@ impl<T: Clone> Message<T> {
             offset,
             payload,
             timestamp,
-            next_offset: offset + 1,
         }
+    }
+    pub fn next_offset(&self) -> u64 {
+        self.offset + 1
     }
 }
 
@@ -118,7 +119,7 @@ mod tests {
         assert_eq!(message.offset, 10);
         assert_eq!(message.payload, "payload");
         assert_eq!(message.timestamp, now);
-        assert_eq!(message.next_offset, 11)
+        assert_eq!(message.next_offset(), 11)
     }
 
     #[test]
