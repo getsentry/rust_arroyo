@@ -169,7 +169,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
             let message = self.broker.consume(partition, offset).unwrap();
             match message {
                 Some(msg) => {
-                    new_offset = Some((partition.clone(), msg.next_offset));
+                    new_offset = Some((partition.clone(), msg.next_offset()));
                     ret_message = Some(msg);
                     break;
                 }
@@ -528,14 +528,14 @@ mod tests {
         assert!(msg1.is_some());
         let msg_content = msg1.unwrap();
         assert_eq!(msg_content.offset, 0);
-        assert_eq!(msg_content.next_offset, 1);
+        assert_eq!(msg_content.next_offset(), 1);
         assert_eq!(msg_content.payload, "message1".to_string());
 
         let msg2 = consumer.poll(Some(0.1)).unwrap();
         assert!(msg2.is_some());
         let msg_content = msg2.unwrap();
         assert_eq!(msg_content.offset, 1);
-        assert_eq!(msg_content.next_offset, 2);
+        assert_eq!(msg_content.next_offset(), 2);
         assert_eq!(msg_content.payload, "message2".to_string());
 
         let ret = consumer.poll(Some(0.1));

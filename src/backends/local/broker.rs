@@ -187,7 +187,7 @@ mod tests {
 
         let message = broker.consume(&partition, 0).unwrap().unwrap();
         assert_eq!(message.offset, 0);
-        assert_eq!(message.next_offset, 1);
+        assert_eq!(message.next_offset(), 1);
         assert_eq!(message.payload, "message".to_string());
     }
 

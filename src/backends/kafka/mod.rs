@@ -150,7 +150,6 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
                                     NaiveDateTime::from_timestamp(time_millis, 0),
                                     Utc,
                                 ),
-                                None,
                             )))
                         }
                         Err(_) => Err(PollError::ConsumerClosed),
