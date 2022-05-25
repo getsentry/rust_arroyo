@@ -85,14 +85,10 @@ impl<T: Clone> Clone for Message<T> {
 
 impl<T: Clone> fmt::Display for Message<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn type_of<V>(_: &V) -> String {
-            type_name::<V>().to_owned()
-        }
-
         write!(
             f,
             "Message<{}>(partition={}), offset={}",
-            type_of(&self.payload),
+            type_name::<T>(),
             &self.partition,
             &self.offset
         )
