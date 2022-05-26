@@ -6,6 +6,7 @@ use crate::types::{Message, Partition, Position, Topic};
 use broker::LocalBroker;
 use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -128,7 +129,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         Ok(())
     }
 
-    fn poll(&mut self, _: Option<f64>) -> Result<Option<Message<TPayload>>, PollError> {
+    fn poll(&mut self, timeout: Option<Duration>) -> Result<Option<Message<TPayload>>, PollError> {
         if self.closed {
             return Err(PollError::ConsumerClosed);
         }
@@ -319,6 +320,7 @@ mod tests {
     use crate::utils::clock::SystemClock;
     use chrono::Utc;
     use std::collections::{HashMap, HashSet};
+    use std::time::Duration;
     use uuid::Uuid;
 
     struct EmptyCallbacks {}
@@ -364,7 +366,7 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(consumer.pending_callback.len(), 1);
 
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(Some(Duration::from_millis(100)));
         let expected = HashMap::from([
             (
                 Partition {
@@ -394,7 +396,7 @@ mod tests {
         let res = consumer.unsubscribe();
         assert!(res.is_ok());
         assert_eq!(consumer.pending_callback.len(), 1);
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(Some(Duration::from_millis(100)));
         assert!(consumer.subscription_state.offsets.is_empty());
     }
 
@@ -478,10 +480,10 @@ mod tests {
             LocalConsumer::new(Uuid::nil(), &mut broker, "test_group".to_string(), true);
 
         let _ = consumer.subscribe(&[topic1, topic2], my_callbacks);
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(Some(Duration::from_millis(100)));
 
         let _ = consumer.unsubscribe();
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(Some(Duration::from_millis(100)));
     }
 
     #[test]
@@ -524,21 +526,21 @@ mod tests {
 
         let _ = consumer.subscribe(&[topic2], my_callbacks);
 
-        let msg1 = consumer.poll(Some(0.1)).unwrap();
+        let msg1 = consumer.poll(Some(Duration::from_millis(100))).unwrap();
         assert!(msg1.is_some());
         let msg_content = msg1.unwrap();
         assert_eq!(msg_content.offset, 0);
         assert_eq!(msg_content.next_offset(), 1);
         assert_eq!(msg_content.payload, "message1".to_string());
 
-        let msg2 = consumer.poll(Some(0.1)).unwrap();
+        let msg2 = consumer.poll(Some(Duration::from_millis(100))).unwrap();
         assert!(msg2.is_some());
         let msg_content = msg2.unwrap();
         assert_eq!(msg_content.offset, 1);
         assert_eq!(msg_content.next_offset(), 2);
         assert_eq!(msg_content.payload, "message2".to_string());
 
-        let ret = consumer.poll(Some(0.1));
+        let ret = consumer.poll(Some(Duration::from_millis(100)));
         assert!(ret.is_err());
     }
 
@@ -557,7 +559,7 @@ mod tests {
             LocalConsumer::new(Uuid::nil(), &mut broker, "test_group".to_string(), false);
         let _ = consumer.subscribe(&[topic2], my_callbacks);
 
-        assert_eq!(consumer.poll(Some(0.1)).unwrap(), None);
+        assert_eq!(consumer.poll(None).unwrap(), None);
         let _ = consumer.pause(HashSet::from([partition.clone()]));
         assert_eq!(
             consumer.paused().unwrap(),
@@ -565,7 +567,7 @@ mod tests {
         );
 
         let _ = consumer.resume(HashSet::from([partition]));
-        assert_eq!(consumer.poll(Some(0.1)).unwrap(), None);
+        assert_eq!(consumer.poll(None).unwrap(), None);
     }
 
     #[test]
@@ -578,7 +580,7 @@ mod tests {
             name: "test2".to_string(),
         };
         let _ = consumer.subscribe(&[topic2.clone()], my_callbacks);
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(None);
         let positions = HashMap::from([(
             Partition {
                 topic: topic2,

@@ -1,5 +1,6 @@
 use super::types::{Message, Partition, Position, Topic};
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 pub mod kafka;
 pub mod local;
@@ -92,7 +93,7 @@ pub trait Consumer<'a, TPayload: Clone> {
     /// consumer attempts to read from an invalid location in one of it's
     /// assigned partitions. (Additional details can be found in the
     /// docstring for ``Consumer.seek``.)
-    fn poll(&mut self, timeout: Option<f64>) -> Result<Option<Message<TPayload>>, PollError>;
+    fn poll(&mut self, timeout: Option<Duration>) -> Result<Option<Message<TPayload>>, PollError>;
 
     /// Pause consuming from the provided partitions.
     ///
