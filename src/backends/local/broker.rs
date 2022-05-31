@@ -1,9 +1,9 @@
-use super::SubscriptionError;
 use crate::backends::storages::{ConsumeError, MessageStorage, TopicDoesNotExist, TopicExists};
 use crate::types::{Message, Partition, Topic};
 use crate::utils::clock::Clock;
 use chrono::DateTime;
 use std::collections::{HashMap, HashSet};
+use thiserror::Error;
 use uuid::Uuid;
 
 pub struct LocalBroker<TPayload: Clone> {
@@ -11,6 +11,29 @@ pub struct LocalBroker<TPayload: Clone> {
     clock: Box<dyn Clock>,
     offsets: HashMap<String, HashMap<Partition, u64>>,
     subscriptions: HashMap<String, HashMap<Uuid, Vec<Topic>>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SubscriptionError {
+    TopicDoesNotExist,
+    PartitionDoesNotExist,
+    RebalanceNotSupported,
+}
+
+#[derive(Error, Debug)]
+#[error("Partition does not exist")]
+pub struct PartitionDoesNotExist;
+
+impl From<PartitionDoesNotExist> for SubscriptionError {
+    fn from(_: PartitionDoesNotExist) -> Self {
+        SubscriptionError::PartitionDoesNotExist
+    }
+}
+
+impl From<TopicDoesNotExist> for SubscriptionError {
+    fn from(_: TopicDoesNotExist) -> Self {
+        SubscriptionError::TopicDoesNotExist
+    }
 }
 
 impl<TPayload: Clone> LocalBroker<TPayload> {

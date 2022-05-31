@@ -1,5 +1,8 @@
 use super::Consumer as ArroyoConsumer;
-use super::{AssignmentCallbacks, ConsumeError, ConsumerClosed, PauseError, PollError};
+use super::{
+    AssignmentCallbacks, CommitError, PauseError, PollError, SeekError, StageError,
+    SubscriptionError, TellError,
+};
 use crate::types::Message as ArroyoMessage;
 use crate::types::{Partition, Position, Topic};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -100,7 +103,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
         &mut self,
         topics: &[Topic],
         callbacks: Box<dyn AssignmentCallbacks>,
-    ) -> Result<(), ConsumerClosed> {
+    ) -> Result<(), SubscriptionError> {
         let context = CustomContext {
             callbacks: Mutex::new(callbacks),
         };
@@ -111,16 +114,20 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
         let consumer: BaseConsumer<CustomContext> = config_obj
             .set_log_level(RDKafkaLogLevel::Debug)
             .create_with_context(context)
-            .expect("Consumer creation failed");
+            .map_err(|err| SubscriptionError::BrokerError {
+                source: (Box::new(err)),
+            })?;
         let topic_str: Vec<&str> = topics.iter().map(|t| t.name.as_ref()).collect();
         consumer
             .subscribe(&topic_str)
-            .expect("Can't subscribe to specified topics");
+            .map_err(|err| SubscriptionError::BrokerError {
+                source: (Box::new(err)),
+            })?;
         self.consumer = Some(consumer);
         Ok(())
     }
 
-    fn unsubscribe(&mut self) -> Result<(), ConsumerClosed> {
+    fn unsubscribe(&mut self) -> Result<(), SubscriptionError> {
         Ok(())
     }
 
@@ -152,7 +159,9 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
                                 ),
                             )))
                         }
-                        Err(_) => Err(PollError::ConsumerClosed),
+                        Err(error) => Err(PollError::BrokerError {
+                            source: (Box::new(error)),
+                        }),
                     },
                 }
             }
@@ -169,17 +178,17 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
         Ok(())
     }
 
-    fn paused(&self) -> Result<HashSet<Partition>, ConsumerClosed> {
+    fn paused(&self) -> Result<HashSet<Partition>, PauseError> {
         //TODO: Implement this
         Ok(HashSet::new())
     }
 
-    fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerClosed> {
+    fn tell(&self) -> Result<HashMap<Partition, u64>, TellError> {
         //TODO: Implement this
         Ok(HashMap::new())
     }
 
-    fn seek(&self, _: HashMap<Partition, u64>) -> Result<(), ConsumeError> {
+    fn seek(&self, _: HashMap<Partition, u64>) -> Result<(), SeekError> {
         //TODO: Implement this
         Ok(())
     }
@@ -187,7 +196,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
     fn stage_positions(
         &mut self,
         positions: HashMap<Partition, Position>,
-    ) -> Result<(), ConsumeError> {
+    ) -> Result<(), StageError> {
         for (partition, position) in positions.iter() {
             self.staged_offsets
                 .insert(partition.clone(), position.clone());
@@ -195,7 +204,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
         Ok(())
     }
 
-    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed> {
+    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, CommitError> {
         let mut map = HashMap::new();
         for (partition, position) in self.staged_offsets.iter() {
             map.insert(
@@ -206,7 +215,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
 
         match self.consumer.as_mut() {
             None => {
-                return Err(ConsumerClosed);
+                return Err(CommitError::ConsumerClosed);
             }
             Some(consumer) => {
                 let partitions = TopicPartitionList::from_topic_map(&map).unwrap();

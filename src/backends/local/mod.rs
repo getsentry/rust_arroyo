@@ -1,34 +1,22 @@
 pub mod broker;
 
-use super::storages::{PartitionDoesNotExist, TopicDoesNotExist};
-use super::{AssignmentCallbacks, ConsumeError, Consumer, ConsumerClosed, PauseError, PollError};
+use super::{
+    AssignmentCallbacks, CommitError, Consumer, PauseError, PollError, SeekError, StageError,
+    SubscriptionError, TellError,
+};
 use crate::types::{Message, Partition, Position, Topic};
 use broker::LocalBroker;
 use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
+use thiserror::Error;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct RebalanceNotSupported;
 
-#[derive(Debug, Clone)]
-pub enum SubscriptionError {
-    TopicDoesNotExist,
-    PartitionDoesNotExist,
-    RebalanceNotSupported,
-}
-
-impl From<PartitionDoesNotExist> for SubscriptionError {
-    fn from(_: PartitionDoesNotExist) -> Self {
-        SubscriptionError::PartitionDoesNotExist
-    }
-}
-
-impl From<TopicDoesNotExist> for SubscriptionError {
-    fn from(_: TopicDoesNotExist) -> Self {
-        SubscriptionError::TopicDoesNotExist
-    }
-}
+#[derive(Error, Debug)]
+#[error("Not Implemented")]
+pub struct NotImplementedError;
 
 enum Callback {
     Assign(HashMap<Partition, u64>),
@@ -92,9 +80,9 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         &mut self,
         topics: &[Topic],
         callbacks: Box<dyn AssignmentCallbacks>,
-    ) -> Result<(), ConsumerClosed> {
+    ) -> Result<(), SubscriptionError> {
         if self.closed {
-            return Err(ConsumerClosed);
+            return Err(SubscriptionError::ConsumerClosed);
         }
         let offsets = self
             .broker
@@ -110,9 +98,9 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         Ok(())
     }
 
-    fn unsubscribe(&mut self) -> Result<(), ConsumerClosed> {
+    fn unsubscribe(&mut self) -> Result<(), SubscriptionError> {
         if self.closed {
-            return Err(ConsumerClosed);
+            return Err(SubscriptionError::ConsumerClosed);
         }
 
         let partitions = self
@@ -228,33 +216,35 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         Ok(())
     }
 
-    fn paused(&self) -> Result<HashSet<Partition>, ConsumerClosed> {
+    fn paused(&self) -> Result<HashSet<Partition>, PauseError> {
         if self.closed {
-            return Err(ConsumerClosed);
+            return Err(PauseError::ConsumerClosed);
         }
         Ok(self.paused.clone())
     }
 
-    fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerClosed> {
+    fn tell(&self) -> Result<HashMap<Partition, u64>, TellError> {
         if self.closed {
-            return Err(ConsumerClosed);
+            return Err(TellError::ConsumerClosed);
         }
         Ok(self.subscription_state.offsets.clone())
     }
 
-    fn seek(&self, _: HashMap<Partition, u64>) -> Result<(), ConsumeError> {
+    fn seek(&self, _: HashMap<Partition, u64>) -> Result<(), SeekError> {
         if self.closed {
-            return Err(ConsumeError::ConsumerClosed);
+            return Err(SeekError::ConsumerClosed);
         }
-        Err(ConsumeError::ConsumerError)
+        Err(SeekError::BrokerError {
+            source: (Box::new(NotImplementedError {})),
+        })
     }
 
     fn stage_positions(
         &mut self,
         positions: HashMap<Partition, Position>,
-    ) -> Result<(), ConsumeError> {
+    ) -> Result<(), StageError> {
         if self.closed {
-            return Err(ConsumeError::ConsumerClosed);
+            return Err(StageError::ConsumerClosed);
         }
         let assigned_partitions = self.subscription_state.offsets.keys().cloned().collect();
         let requested_partitions: HashSet<_> = positions.keys().cloned().collect();
@@ -262,7 +252,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
             .difference(&assigned_partitions)
             .collect();
         if !diff.is_empty() {
-            return Err(ConsumeError::ConsumerError);
+            return Err(StageError::UnassignedPartition);
         }
         for (partition, position) in positions {
             self.subscription_state
@@ -272,9 +262,9 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         Ok(())
     }
 
-    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed> {
+    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, CommitError> {
         if self.closed {
-            return Err(ConsumerClosed);
+            return Err(CommitError::ConsumerClosed);
         }
         let positions = self.subscription_state.staged_positions.clone();
 

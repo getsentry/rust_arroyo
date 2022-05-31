@@ -1,38 +1,81 @@
 use super::types::{Message, Partition, Position, Topic};
 use std::collections::{HashMap, HashSet};
+use thiserror::Error;
 
 pub mod kafka;
 pub mod local;
 pub mod storages;
 
-#[derive(Debug, Clone)]
-pub struct ConsumerClosed;
+#[derive(Error, Debug)]
+pub enum SubscriptionError {
+    #[error("The consumer is closed")]
+    ConsumerClosed,
 
-#[derive(Debug, Clone)]
-pub struct EndOfPartition;
+    #[error("Subscription error")]
+    BrokerError { source: Box<dyn std::error::Error> },
+}
 
-#[derive(Debug, Clone)]
+#[derive(Error, Debug)]
 pub enum PollError {
+    #[error("The consumer is closed")]
     ConsumerClosed,
+
+    #[error("End of partition reached")]
     EndOfPartition,
+
+    #[error("Error while polling")]
+    BrokerError { source: Box<dyn std::error::Error> },
 }
 
-#[derive(Debug, Clone)]
-pub struct UnassignedPartition;
-
-#[derive(Debug, Clone)]
+#[derive(Error, Debug)]
 pub enum PauseError {
+    #[error("The consumer is closed")]
     ConsumerClosed,
+
+    #[error("Partition not assigned to this consumer.")]
     UnassignedPartition,
+
+    #[error("Consumer state change error")]
+    BrokerError { source: Box<dyn std::error::Error> },
 }
 
-#[derive(Debug, Clone)]
-pub struct ConsumerError;
-
-#[derive(Debug, Clone)]
-pub enum ConsumeError {
+#[derive(Error, Debug)]
+pub enum TellError {
+    #[error("The consumer is closed")]
     ConsumerClosed,
-    ConsumerError,
+
+    #[error("Cannot identify position")]
+    BrokerError { source: Box<dyn std::error::Error> },
+}
+
+#[derive(Error, Debug)]
+pub enum SeekError {
+    #[error("The consumer is closed")]
+    ConsumerClosed,
+
+    #[error("Cannot identify position")]
+    BrokerError { source: Box<dyn std::error::Error> },
+}
+
+#[derive(Error, Debug)]
+pub enum StageError {
+    #[error("The consumer is closed")]
+    ConsumerClosed,
+
+    #[error("Partition not assigned to this consumer.")]
+    UnassignedPartition,
+
+    #[error("Cannot stage position")]
+    BrokerError { source: Box<dyn std::error::Error> },
+}
+
+#[derive(Error, Debug)]
+pub enum CommitError {
+    #[error("The consumer is closed")]
+    ConsumerClosed,
+
+    #[error("Cannot commit position")]
+    BrokerError { source: Box<dyn std::error::Error> },
 }
 
 /// This is basically an observer pattern to receive the callbacks from
@@ -81,9 +124,9 @@ pub trait Consumer<'a, TPayload: Clone> {
         &mut self,
         topic: &[Topic],
         callbacks: Box<dyn AssignmentCallbacks>,
-    ) -> Result<(), ConsumerClosed>;
+    ) -> Result<(), SubscriptionError>;
 
-    fn unsubscribe(&mut self) -> Result<(), ConsumerClosed>;
+    fn unsubscribe(&mut self) -> Result<(), SubscriptionError>;
 
     /// Fetch a message from the consumer. If no message is available before
     /// the timeout, ``None`` is returned.
@@ -117,10 +160,10 @@ pub trait Consumer<'a, TPayload: Clone> {
     fn resume(&mut self, partitions: HashSet<Partition>) -> Result<(), PauseError>;
 
     /// Return the currently paused partitions.
-    fn paused(&self) -> Result<HashSet<Partition>, ConsumerClosed>;
+    fn paused(&self) -> Result<HashSet<Partition>, PauseError>;
 
     /// Return the working offsets for all currently assigned positions.
-    fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerClosed>;
+    fn tell(&self) -> Result<HashMap<Partition, u64>, TellError>;
 
     /// Update the working offsets for the provided partitions.
     ///
@@ -136,7 +179,7 @@ pub trait Consumer<'a, TPayload: Clone> {
     ///
     /// If any provided partitions are not in the assignment set, an
     /// exception will be raised and no offsets will be modified.
-    fn seek(&self, offsets: HashMap<Partition, u64>) -> Result<(), ConsumeError>;
+    fn seek(&self, offsets: HashMap<Partition, u64>) -> Result<(), SeekError>;
 
     /// Stage offsets to be committed. If an offset has already been staged
     /// for a given partition, that offset is overwritten (even if the offset
@@ -144,11 +187,11 @@ pub trait Consumer<'a, TPayload: Clone> {
     fn stage_positions(
         &mut self,
         positions: HashMap<Partition, Position>,
-    ) -> Result<(), ConsumeError>;
+    ) -> Result<(), StageError>;
 
     /// Commit staged offsets. The return value of this method is a mapping
     /// of streams with their committed offsets as values.
-    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed>;
+    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, CommitError>;
 
     fn close(&mut self, timeout: Option<f64>);
 
