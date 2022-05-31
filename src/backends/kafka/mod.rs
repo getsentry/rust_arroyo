@@ -1,8 +1,5 @@
-use super::Consumer as ArroyoConsumer;
-use super::{
-    AssignmentCallbacks, CommitError, PauseError, PollError, SeekError, StageError,
-    SubscriptionError, TellError,
-};
+use super::AssignmentCallbacks;
+use super::{Consumer as ArroyoConsumer, ConsumerError};
 use crate::types::Message as ArroyoMessage;
 use crate::types::{Partition, Position, Topic};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -10,7 +7,7 @@ use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::base_consumer::BaseConsumer;
 use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
-use rdkafka::error::KafkaResult;
+use rdkafka::error::{KafkaError, KafkaResult};
 use rdkafka::message::{Message, OwnedMessage};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use std::collections::HashMap;
@@ -74,6 +71,12 @@ impl ConsumerContext for CustomContext {
     }
 }
 
+impl From<KafkaError> for ConsumerError {
+    fn from(err: KafkaError) -> Self {
+        ConsumerError::Other(Box::new(err))
+    }
+}
+
 pub struct KafkaConsumer {
     // TODO: This has to be an option as of now because rdkafka requires
     // callbacks during the instantiation. While the streaming processor
@@ -103,7 +106,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
         &mut self,
         topics: &[Topic],
         callbacks: Box<dyn AssignmentCallbacks>,
-    ) -> Result<(), SubscriptionError> {
+    ) -> Result<(), ConsumerError> {
         let context = CustomContext {
             callbacks: Mutex::new(callbacks),
         };
@@ -113,82 +116,71 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
         }
         let consumer: BaseConsumer<CustomContext> = config_obj
             .set_log_level(RDKafkaLogLevel::Debug)
-            .create_with_context(context)
-            .map_err(|err| SubscriptionError::BrokerError {
-                source: (Box::new(err)),
-            })?;
+            .create_with_context(context)?;
         let topic_str: Vec<&str> = topics.iter().map(|t| t.name.as_ref()).collect();
-        consumer
-            .subscribe(&topic_str)
-            .map_err(|err| SubscriptionError::BrokerError {
-                source: (Box::new(err)),
-            })?;
+        consumer.subscribe(&topic_str)?;
         self.consumer = Some(consumer);
         Ok(())
     }
 
-    fn unsubscribe(&mut self) -> Result<(), SubscriptionError> {
+    fn unsubscribe(&mut self) -> Result<(), ConsumerError> {
         Ok(())
     }
 
-    fn poll(&mut self, _: Option<f64>) -> Result<Option<ArroyoMessage<OwnedMessage>>, PollError> {
+    fn poll(
+        &mut self,
+        _: Option<f64>,
+    ) -> Result<Option<ArroyoMessage<OwnedMessage>>, ConsumerError> {
         match self.consumer.as_mut() {
-            None => Err(PollError::ConsumerClosed),
+            None => Err(ConsumerError::ConsumerClosed),
             Some(consumer) => {
                 let res = consumer.poll(Duration::from_secs(1));
                 match res {
                     None => Ok(None),
-                    Some(res) => match res {
-                        Ok(msg) => {
-                            let owned = msg.detach();
-                            let topic = Topic {
-                                name: owned.topic().to_string(),
-                            };
-                            let partition = Partition {
-                                topic,
-                                index: owned.partition() as u16,
-                            };
-                            let time_millis = owned.timestamp().to_millis().unwrap_or(0);
-                            Ok(Some(ArroyoMessage::new(
-                                partition,
-                                owned.offset() as u64,
-                                owned,
-                                DateTime::from_utc(
-                                    NaiveDateTime::from_timestamp(time_millis, 0),
-                                    Utc,
-                                ),
-                            )))
-                        }
-                        Err(error) => Err(PollError::BrokerError {
-                            source: (Box::new(error)),
-                        }),
-                    },
+                    Some(res) => {
+                        let msg = res?;
+                        let owned = msg.detach();
+                        let topic = Topic {
+                            name: owned.topic().to_string(),
+                        };
+                        let partition = Partition {
+                            topic,
+                            index: owned.partition() as u16,
+                        };
+                        let time_millis = owned.timestamp().to_millis().unwrap_or(0);
+                        Ok(Some(ArroyoMessage::new(
+                            partition,
+                            owned.offset() as u64,
+                            owned,
+                            DateTime::from_utc(NaiveDateTime::from_timestamp(time_millis, 0), Utc),
+                        )))
+                    }
                 }
             }
         }
     }
 
-    fn pause(&mut self, _: HashSet<Partition>) -> Result<(), PauseError> {
+    fn pause(&mut self, _: HashSet<Partition>) -> Result<(), ConsumerError> {
         //TODO: Implement this
         Ok(())
     }
 
-    fn resume(&mut self, _: HashSet<Partition>) -> Result<(), PauseError> {
+    fn resume(&mut self, _: HashSet<Partition>) -> Result<(), ConsumerError> {
         //TODO: Implement this
         Ok(())
     }
 
-    fn paused(&self) -> Result<HashSet<Partition>, PauseError> {
+    fn paused(&self) -> Result<HashSet<Partition>, ConsumerError> {
         //TODO: Implement this
         Ok(HashSet::new())
     }
 
-    fn tell(&self) -> Result<HashMap<Partition, u64>, TellError> {
+    fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerError> {
         //TODO: Implement this
         Ok(HashMap::new())
     }
 
-    fn seek(&self, _: HashMap<Partition, u64>) -> Result<(), SeekError> {
+    fn seek(&self, _: HashMap<Partition, u64>) -> Result<(), ConsumerError> {
         //TODO: Implement this
         Ok(())
     }
@@ -196,7 +188,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
     fn stage_positions(
         &mut self,
         positions: HashMap<Partition, Position>,
-    ) -> Result<(), StageError> {
+    ) -> Result<(), ConsumerError> {
         for (partition, position) in positions.iter() {
             self.staged_offsets
                 .insert(partition.clone(), position.clone());
@@ -204,7 +196,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
         Ok(())
     }
 
-    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, CommitError> {
+    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError> {
         let mut map = HashMap::new();
         for (partition, position) in self.staged_offsets.iter() {
             map.insert(
@@ -215,7 +207,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
 
         match self.consumer.as_mut() {
             None => {
-                return Err(CommitError::ConsumerClosed);
+                return Err(ConsumerError::ConsumerClosed);
             }
             Some(consumer) => {
                 let partitions = TopicPartitionList::from_topic_map(&map).unwrap();

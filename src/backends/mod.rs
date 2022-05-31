@@ -7,75 +7,19 @@ pub mod local;
 pub mod storages;
 
 #[derive(Error, Debug)]
-pub enum SubscriptionError {
-    #[error("The consumer is closed")]
-    ConsumerClosed,
-
-    #[error("Subscription error")]
-    BrokerError { source: Box<dyn std::error::Error> },
-}
-
-#[derive(Error, Debug)]
-pub enum PollError {
-    #[error("The consumer is closed")]
-    ConsumerClosed,
-
+pub enum ConsumerError {
     #[error("End of partition reached")]
     EndOfPartition,
 
-    #[error("Error while polling")]
-    BrokerError { source: Box<dyn std::error::Error> },
-}
-
-#[derive(Error, Debug)]
-pub enum PauseError {
     #[error("The consumer is closed")]
     ConsumerClosed,
 
-    #[error("Partition not assigned to this consumer.")]
+    #[error("Partition not assigned to consumer")]
     UnassignedPartition,
 
-    #[error("Consumer state change error")]
-    BrokerError { source: Box<dyn std::error::Error> },
-}
-
-#[derive(Error, Debug)]
-pub enum TellError {
-    #[error("The consumer is closed")]
-    ConsumerClosed,
-
-    #[error("Cannot identify position")]
-    BrokerError { source: Box<dyn std::error::Error> },
-}
-
-#[derive(Error, Debug)]
-pub enum SeekError {
-    #[error("The consumer is closed")]
-    ConsumerClosed,
-
-    #[error("Cannot identify position")]
-    BrokerError { source: Box<dyn std::error::Error> },
-}
-
-#[derive(Error, Debug)]
-pub enum StageError {
-    #[error("The consumer is closed")]
-    ConsumerClosed,
-
-    #[error("Partition not assigned to this consumer.")]
-    UnassignedPartition,
-
-    #[error("Cannot stage position")]
-    BrokerError { source: Box<dyn std::error::Error> },
-}
-
-#[derive(Error, Debug)]
-pub enum CommitError {
-    #[error("The consumer is closed")]
-    ConsumerClosed,
-
-    #[error("Cannot commit position")]
-    BrokerError { source: Box<dyn std::error::Error> },
+    // Pretty much any useful error.
+    #[error(transparent)]
+    Other(#[from] Box<dyn std::error::Error>),
 }
 
 /// This is basically an observer pattern to receive the callbacks from
@@ -124,9 +68,9 @@ pub trait Consumer<'a, TPayload: Clone> {
         &mut self,
         topic: &[Topic],
         callbacks: Box<dyn AssignmentCallbacks>,
-    ) -> Result<(), SubscriptionError>;
+    ) -> Result<(), ConsumerError>;
 
-    fn unsubscribe(&mut self) -> Result<(), SubscriptionError>;
+    fn unsubscribe(&mut self) -> Result<(), ConsumerError>;
 
     /// Fetch a message from the consumer. If no message is available before
     /// the timeout, ``None`` is returned.
@@ -135,7 +79,7 @@ pub trait Consumer<'a, TPayload: Clone> {
     /// consumer attempts to read from an invalid location in one of it's
     /// assigned partitions. (Additional details can be found in the
     /// docstring for ``Consumer.seek``.)
-    fn poll(&mut self, timeout: Option<f64>) -> Result<Option<Message<TPayload>>, PollError>;
+    fn poll(&mut self, timeout: Option<f64>) -> Result<Option<Message<TPayload>>, ConsumerError>;
 
     /// Pause consuming from the provided partitions.
     ///
@@ -151,19 +95,19 @@ pub trait Consumer<'a, TPayload: Clone> {
     ///
     /// If any of the provided partitions are not in the assignment set, an
     /// exception will be raised and no partitions will be paused.
-    fn pause(&mut self, partitions: HashSet<Partition>) -> Result<(), PauseError>;
+    fn pause(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError>;
 
     /// Resume consuming from the provided partitions.
     ///
     /// If any of the provided partitions are not in the assignment set, an
     /// exception will be raised and no partitions will be resumed.
-    fn resume(&mut self, partitions: HashSet<Partition>) -> Result<(), PauseError>;
+    fn resume(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError>;
 
     /// Return the currently paused partitions.
-    fn paused(&self) -> Result<HashSet<Partition>, PauseError>;
+    fn paused(&self) -> Result<HashSet<Partition>, ConsumerError>;
 
     /// Return the working offsets for all currently assigned positions.
-    fn tell(&self) -> Result<HashMap<Partition, u64>, TellError>;
+    fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerError>;
 
     /// Update the working offsets for the provided partitions.
     ///
@@ -179,7 +123,7 @@ pub trait Consumer<'a, TPayload: Clone> {
     ///
     /// If any provided partitions are not in the assignment set, an
     /// exception will be raised and no offsets will be modified.
-    fn seek(&self, offsets: HashMap<Partition, u64>) -> Result<(), SeekError>;
+    fn seek(&self, offsets: HashMap<Partition, u64>) -> Result<(), ConsumerError>;
 
     /// Stage offsets to be committed. If an offset has already been staged
     /// for a given partition, that offset is overwritten (even if the offset
@@ -187,11 +131,11 @@ pub trait Consumer<'a, TPayload: Clone> {
     fn stage_positions(
         &mut self,
         positions: HashMap<Partition, Position>,
-    ) -> Result<(), StageError>;
+    ) -> Result<(), ConsumerError>;
 
     /// Commit staged offsets. The return value of this method is a mapping
     /// of streams with their committed offsets as values.
-    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, CommitError>;
+    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError>;
 
     fn close(&mut self, timeout: Option<f64>);
 
