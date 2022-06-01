@@ -78,7 +78,6 @@ pub struct KafkaConsumer {
     // So we need to build the kafka consumer upon subscribe and not
     // in the constructor.
     consumer: Option<BaseConsumer<CustomContext>>,
-    #[allow(dead_code)]
     group: String,
     config: HashMap<String, String>,
     staged_offsets: HashMap<Partition, Position>,
