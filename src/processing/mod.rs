@@ -132,7 +132,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
                     None => {}
                     Some(request) => {
                         self.consumer.stage_positions(request.positions).unwrap();
-                        self.consumer.commit_position().unwrap();
+                        self.consumer.commit_positions().unwrap();
                     }
                 };
 
