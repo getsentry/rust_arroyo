@@ -8,12 +8,41 @@ use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::base_consumer::BaseConsumer;
 use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
-use rdkafka::message::{Message, OwnedMessage};
+use rdkafka::message::{BorrowedHeaders, BorrowedMessage, Message, OwnedHeaders};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::Duration;
+
+#[derive(Clone)]
+pub struct KafkaPayload {
+    pub key: Option<Vec<u8>>,
+    pub headers: Option<OwnedHeaders>,
+    pub payload: Option<Vec<u8>>,
+}
+
+fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
+    let topic = Topic {
+        name: msg.topic().to_string(),
+    };
+    let partition = Partition {
+        topic,
+        index: msg.partition() as u16,
+    };
+    let time_millis = msg.timestamp().to_millis().unwrap_or(0);
+
+    ArroyoMessage::new(
+        partition,
+        msg.offset() as u64,
+        KafkaPayload {
+            key: msg.key().map(|k| k.to_vec()),
+            headers: msg.headers().map(BorrowedHeaders::detach),
+            payload: msg.payload().map(|p| p.to_vec()),
+        },
+        DateTime::from_utc(NaiveDateTime::from_timestamp(time_millis, 0), Utc),
+    )
+}
 
 struct CustomContext {
     // This is horrible. I want to mutate callbacks (to invoke on_assign)
@@ -95,7 +124,7 @@ impl KafkaConsumer {
     }
 }
 
-impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
+impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     fn subscribe(
         &mut self,
         topics: &[Topic],
@@ -127,7 +156,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
     fn poll(
         &mut self,
         timeout: Option<Duration>,
-    ) -> Result<Option<ArroyoMessage<OwnedMessage>>, PollError> {
+    ) -> Result<Option<ArroyoMessage<KafkaPayload>>, PollError> {
         let duration = timeout.unwrap_or(Duration::from_millis(100));
 
         match self.consumer.as_mut() {
@@ -137,26 +166,7 @@ impl<'a> ArroyoConsumer<'a, OwnedMessage> for KafkaConsumer {
                 match res {
                     None => Ok(None),
                     Some(res) => match res {
-                        Ok(msg) => {
-                            let owned = msg.detach();
-                            let topic = Topic {
-                                name: owned.topic().to_string(),
-                            };
-                            let partition = Partition {
-                                topic,
-                                index: owned.partition() as u16,
-                            };
-                            let time_millis = owned.timestamp().to_millis().unwrap_or(0);
-                            Ok(Some(ArroyoMessage::new(
-                                partition,
-                                owned.offset() as u64,
-                                owned,
-                                DateTime::from_utc(
-                                    NaiveDateTime::from_timestamp(time_millis, 0),
-                                    Utc,
-                                ),
-                            )))
-                        }
+                        Ok(msg) => Ok(Some(create_kafka_message(msg))),
                         Err(_) => Err(PollError::ConsumerClosed),
                     },
                 }

@@ -1,7 +1,6 @@
 extern crate rust_arroyo;
 
-use rdkafka::message::OwnedMessage;
-use rust_arroyo::backends::kafka::KafkaConsumer;
+use rust_arroyo::backends::kafka::{KafkaConsumer, KafkaPayload};
 use rust_arroyo::processing::strategies::{
     CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
 };
@@ -12,7 +11,7 @@ use std::collections::HashMap;
 struct TestStrategy {
     partitions: HashMap<Partition, Position>,
 }
-impl ProcessingStrategy<OwnedMessage> for TestStrategy {
+impl ProcessingStrategy<KafkaPayload> for TestStrategy {
     fn poll(&mut self) -> Option<CommitRequest> {
         println!("POLL");
         if !self.partitions.is_empty() {
@@ -28,7 +27,7 @@ impl ProcessingStrategy<OwnedMessage> for TestStrategy {
         }
     }
 
-    fn submit(&mut self, message: Message<OwnedMessage>) -> Result<(), MessageRejected> {
+    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
         println!("SUBMIT {}", message);
         self.partitions.insert(
             message.partition,
@@ -50,8 +49,8 @@ impl ProcessingStrategy<OwnedMessage> for TestStrategy {
 }
 
 struct TestFactory {}
-impl ProcessingStrategyFactory<OwnedMessage> for TestFactory {
-    fn create(&self) -> Box<dyn ProcessingStrategy<OwnedMessage>> {
+impl ProcessingStrategyFactory<KafkaPayload> for TestFactory {
+    fn create(&self) -> Box<dyn ProcessingStrategy<KafkaPayload>> {
         Box::new(TestStrategy {
             partitions: HashMap::new(),
         })
