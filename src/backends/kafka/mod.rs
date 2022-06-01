@@ -12,6 +12,7 @@ use rdkafka::message::{BorrowedHeaders, BorrowedMessage, Message, OwnedHeaders};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::mem;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -210,24 +211,23 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed> {
-        let mut map = HashMap::new();
+        let mut topic_map = HashMap::new();
         for (partition, position) in self.staged_offsets.iter() {
-            map.insert(
+            topic_map.insert(
                 (partition.topic.name.clone(), partition.index as i32),
                 Offset::from_raw(position.offset as i64),
             );
         }
 
-        match self.consumer.as_mut() {
-            None => {
-                return Err(ConsumerClosed);
-            }
-            Some(consumer) => {
-                let partitions = TopicPartitionList::from_topic_map(&map).unwrap();
-                let _ = consumer.commit(&partitions, CommitMode::Sync);
-            }
-        };
-        Ok(HashMap::new())
+        let consumer = self.consumer.as_mut().ok_or(ConsumerClosed)?;
+        let partitions = TopicPartitionList::from_topic_map(&topic_map).unwrap();
+        let _ = consumer.commit(&partitions, CommitMode::Sync).unwrap();
+
+        // Clear staged offsets
+        let cleared_map = HashMap::new();
+        let prev_offsets = mem::replace(&mut self.staged_offsets, cleared_map);
+
+        Ok(prev_offsets)
     }
 
     fn close(&mut self, _: Option<f64>) {
@@ -262,4 +262,6 @@ mod tests {
         let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
         consumer.subscribe(&[topic], my_callbacks).unwrap();
     }
+    #[test]
+    fn test_commit() {}
 }
