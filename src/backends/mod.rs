@@ -149,7 +149,7 @@ pub trait Consumer<'a, TPayload: Clone> {
 
     /// Commit staged offsets. The return value of this method is a mapping
     /// of streams with their committed offsets as values.
-    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed>;
+    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed>;
 
     fn close(&mut self, timeout: Option<f64>);
 

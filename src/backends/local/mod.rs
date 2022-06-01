@@ -273,7 +273,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         Ok(())
     }
 
-    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed> {
+    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed> {
         if self.closed {
             return Err(ConsumerClosed);
         }
@@ -594,7 +594,7 @@ mod tests {
         let stage_result = consumer.stage_positions(positions.clone());
         assert!(stage_result.is_ok());
 
-        let offsets = consumer.commit_position();
+        let offsets = consumer.commit_positions();
         assert!(offsets.is_ok());
         assert_eq!(offsets.unwrap(), positions);
     }
