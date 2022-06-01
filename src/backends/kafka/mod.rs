@@ -107,7 +107,6 @@ pub struct KafkaConsumer {
     // So we need to build the kafka consumer upon subscribe and not
     // in the constructor.
     consumer: Option<BaseConsumer<CustomContext>>,
-    #[allow(dead_code)]
     group: String,
     config: HashMap<String, String>,
     staged_offsets: HashMap<Partition, Position>,
@@ -137,6 +136,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         for (key, val) in self.config.iter() {
             config_obj.set(key, val);
         }
+        config_obj.set("group.id", self.group.clone());
         let consumer: BaseConsumer<CustomContext> = config_obj
             .set_log_level(RDKafkaLogLevel::Debug)
             .create_with_context(context)
@@ -243,8 +243,9 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
 
 #[cfg(test)]
 mod tests {
-    use super::AssignmentCallbacks;
-    use crate::types::Partition;
+    use super::{AssignmentCallbacks, KafkaConsumer};
+    use crate::backends::Consumer;
+    use crate::types::{Partition, Topic};
     use std::collections::HashMap;
 
     struct EmptyCallbacks {}
@@ -254,5 +255,12 @@ mod tests {
     }
 
     #[test]
-    fn test_subscribe() {}
+    fn test_subscribe() {
+        let mut consumer = KafkaConsumer::new("my-group".to_string(), HashMap::new());
+        let topic = Topic {
+            name: "test".to_string(),
+        };
+        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
+        consumer.subscribe(&[topic], my_callbacks).unwrap();
+    }
 }
