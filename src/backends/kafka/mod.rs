@@ -203,9 +203,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         &mut self,
         positions: HashMap<Partition, Position>,
     ) -> Result<(), ConsumeError> {
-        for (partition, position) in positions.iter() {
-            self.staged_offsets
-                .insert(partition.clone(), position.clone());
+        for (partition, position) in positions {
+            self.staged_offsets.insert(partition, position);
         }
         Ok(())
     }
