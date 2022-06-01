@@ -153,11 +153,16 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         Ok(())
     }
 
-    fn poll(&mut self, _: Option<f64>) -> Result<Option<ArroyoMessage<KafkaPayload>>, PollError> {
+    fn poll(
+        &mut self,
+        timeout: Option<Duration>,
+    ) -> Result<Option<ArroyoMessage<KafkaPayload>>, PollError> {
+        let duration = timeout.unwrap_or(Duration::from_millis(100));
+
         match self.consumer.as_mut() {
             None => Err(PollError::ConsumerClosed),
             Some(consumer) => {
-                let res = consumer.poll(Duration::from_secs(1));
+                let res = consumer.poll(duration);
                 match res {
                     None => Ok(None),
                     Some(res) => match res {
