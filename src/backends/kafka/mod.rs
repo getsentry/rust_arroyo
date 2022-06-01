@@ -210,7 +210,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         Ok(())
     }
 
-    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed> {
+    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed> {
         let mut map = HashMap::new();
         for (partition, position) in self.staged_offsets.iter() {
             map.insert(
