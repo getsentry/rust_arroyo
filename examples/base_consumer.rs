@@ -1,5 +1,6 @@
 extern crate rust_arroyo;
 
+use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::backends::AssignmentCallbacks;
 use rust_arroyo::backends::Consumer;
@@ -13,14 +14,12 @@ impl AssignmentCallbacks for EmptyCallbacks {
 }
 
 fn main() {
-    let config = HashMap::from([
-        ("group.id".to_string(), "my_group".to_string()),
-        (
-            "bootstrap.servers".to_string(),
-            "localhost:9092".to_string(),
-        ),
-    ]);
-    let mut consumer = KafkaConsumer::new("my_group".to_string(), config);
+    let config = KafkaConfig::new_consumer_config(
+        vec!["localhost:9092".to_string()],
+        "my_group".to_string(),
+        "latest".to_string(),
+    );
+    let mut consumer = KafkaConsumer::new(config);
     let topic = Topic {
         name: "test_static".to_string(),
     };
