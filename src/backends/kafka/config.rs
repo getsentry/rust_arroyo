@@ -27,10 +27,9 @@ impl KafkaConfig {
         config
             .config_map
             .insert("enable.auto.commit".to_string(), "false".to_string());
-        config.config_map.insert(
-            "auto.offset.reset".to_string(),
-            auto_offset_reset.to_string(),
-        );
+        config
+            .config_map
+            .insert("auto.offset.reset".to_string(), auto_offset_reset);
         config.config_map.insert(
             "queued.max.messages.kbytes".to_string(),
             DEFAULT_QUEUED_MAX_MESSAGE_KBYTES.to_string(),
