@@ -1,6 +1,9 @@
 use rdkafka::config::ClientConfig as RdKafkaConfig;
 use std::collections::HashMap;
 
+const DEFAULT_QUEUED_MAX_MESSAGE_KBYTES: u32 = 50_000;
+const DEFAULT_QUEUED_MIN_MESSAGES: u32 = 10_000;
+
 #[derive(Debug, Clone)]
 pub struct KafkaConfig {
     config_map: HashMap<String, String>,
@@ -28,6 +31,14 @@ impl KafkaConfig {
             "auto.offset.reset".to_string(),
             auto_offset_reset.to_string(),
         );
+        config.config_map.insert(
+            "queued.max.messages.kbytes".to_string(),
+            DEFAULT_QUEUED_MAX_MESSAGE_KBYTES.to_string(),
+        );
+        config.config_map.insert(
+            "queued.min.messages".to_string(),
+            DEFAULT_QUEUED_MIN_MESSAGES.to_string(),
+        );
         config
     }
 
@@ -43,7 +54,7 @@ impl KafkaConfig {
         );
     }
 
-    pub fn set_min_messages(&mut self, min_messages: u32) {
+    pub fn set_queued_min_messages(&mut self, min_messages: u32) {
         // Consumer configuration
         self.config_map
             .insert("queued.min.messages".to_string(), min_messages.to_string());
@@ -71,7 +82,7 @@ impl From<KafkaConfig> for RdKafkaConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::KafkaConfig;
+    use super::{KafkaConfig, DEFAULT_QUEUED_MIN_MESSAGES};
     use rdkafka::config::ClientConfig as RdKafkaConfig;
 
     #[test]
@@ -82,8 +93,15 @@ mod tests {
             "error".to_string(),
         );
 
-        config.set_min_messages(100_000);
         config.set_queued_max_messages_kbytes(1_000_000);
-        let _: RdKafkaConfig = config.into();
+        let rdkafka_config: RdKafkaConfig = config.into();
+        assert_eq!(
+            rdkafka_config.get("queued.min.messages"),
+            Some(&DEFAULT_QUEUED_MIN_MESSAGES.to_string()[..])
+        );
+        assert_eq!(
+            rdkafka_config.get("queued.max.messages.kbytes"),
+            Some("1000000")
+        );
     }
 }
