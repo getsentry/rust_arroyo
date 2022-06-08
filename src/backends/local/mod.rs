@@ -257,12 +257,12 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         if self.closed {
             return Err(ConsumeError::ConsumerClosed);
         }
-        let assigned_partitions = self.subscription_state.offsets.keys().cloned().collect();
-        let requested_partitions: HashSet<_> = positions.keys().cloned().collect();
-        let diff: HashSet<_> = requested_partitions
-            .difference(&assigned_partitions)
-            .collect();
-        if !diff.is_empty() {
+        let assigned_partitions: HashSet<&Partition> =
+            self.subscription_state.offsets.keys().collect();
+        let requested_partitions: HashSet<&Partition> = positions.keys().collect();
+        let diff = requested_partitions.difference(&assigned_partitions);
+
+        if diff.count() > 0 {
             return Err(ConsumeError::ConsumerError);
         }
         for (partition, position) in positions {
@@ -583,7 +583,7 @@ mod tests {
         let _ = consumer.poll(None);
         let positions = HashMap::from([(
             Partition {
-                topic: topic2,
+                topic: topic2.clone(),
                 index: 0,
             },
             Position {
@@ -597,5 +597,20 @@ mod tests {
         let offsets = consumer.commit_positions();
         assert!(offsets.is_ok());
         assert_eq!(offsets.unwrap(), positions);
+
+        // Stage invalid positions
+        let invalid_positions = HashMap::from([(
+            Partition {
+                topic: topic2.clone(),
+                index: 1,
+            },
+            Position {
+                offset: 100,
+                timestamp: Utc::now(),
+            },
+        )]);
+
+        let stage_result = consumer.stage_positions(invalid_positions);
+        assert!(stage_result.is_err());
     }
 }
