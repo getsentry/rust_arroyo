@@ -601,7 +601,7 @@ mod tests {
         // Stage invalid positions
         let invalid_positions = HashMap::from([(
             Partition {
-                topic: topic2.clone(),
+                topic: topic2,
                 index: 1,
             },
             Position {
