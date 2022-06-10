@@ -68,7 +68,7 @@ impl<TPayload: Clone> Callbacks<TPayload> {
 /// strategies are instantiated on partition assignment and closed on
 /// partition revocation.
 pub struct StreamProcessor<'a, TPayload: Clone> {
-    consumer: Box<dyn Consumer<'a, TPayload> + 'a>,
+    consumer: Box<dyn Consumer<TPayload> + 'a>,
     strategies: Arc<Mutex<Strategies<TPayload>>>,
     message: Option<Message<TPayload>>,
     shutdown_requested: bool,
@@ -76,7 +76,7 @@ pub struct StreamProcessor<'a, TPayload: Clone> {
 
 impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     pub fn new(
-        consumer: Box<dyn Consumer<'a, TPayload> + 'a>,
+        consumer: Box<dyn Consumer<TPayload> + 'a>,
         processing_factory: Box<dyn ProcessingStrategyFactory<TPayload>>,
     ) -> Self {
         let strategies = Arc::new(Mutex::new(Strategies {
@@ -278,7 +278,7 @@ mod tests {
         let mut broker = build_broker();
         let consumer = Box::new(LocalConsumer::new(
             Uuid::nil(),
-            &mut broker,
+            broker,
             "test_group".to_string(),
             false,
         ));
@@ -306,7 +306,7 @@ mod tests {
 
         let consumer = Box::new(LocalConsumer::new(
             Uuid::nil(),
-            &mut broker,
+            broker,
             "test_group".to_string(),
             false,
         ));

@@ -77,7 +77,7 @@ pub trait AssignmentCallbacks: Send + Sync {
 /// occurs even if the consumer retains ownership of the partition across
 /// assignments.) For this reason, it is generally good practice to ensure
 /// offsets are committed as part of the revocation callback.
-pub trait Consumer<'a, TPayload: Clone> {
+pub trait Consumer<TPayload: Clone> {
     fn subscribe(
         &mut self,
         topic: &[Topic],

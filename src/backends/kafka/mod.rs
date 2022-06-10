@@ -124,7 +124,7 @@ impl KafkaConsumer {
     }
 }
 
-impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
+impl ArroyoConsumer<KafkaPayload> for KafkaConsumer {
     fn subscribe(
         &mut self,
         topics: &[Topic],
