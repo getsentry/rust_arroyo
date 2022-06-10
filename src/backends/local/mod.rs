@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn test_consumer_subscription() {
-        let mut broker = build_broker();
+        let broker = build_broker();
 
         let topic1 = Topic {
             name: "test1".to_string(),
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn test_subscription_callback() {
-        let mut broker = build_broker();
+        let broker = build_broker();
 
         let topic1 = Topic {
             name: "test1".to_string(),
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_paused() {
-        let mut broker = build_broker();
+        let broker = build_broker();
         let topic2 = Topic {
             name: "test2".to_string(),
         };
@@ -568,7 +568,7 @@ mod tests {
 
     #[test]
     fn test_commit() {
-        let mut broker = build_broker();
+        let broker = build_broker();
         let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
         let mut consumer = LocalConsumer::new(Uuid::nil(), broker, "test_group".to_string(), false);
         let topic2 = Topic {
