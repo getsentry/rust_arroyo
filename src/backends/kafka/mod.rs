@@ -26,6 +26,18 @@ pub struct KafkaPayload {
     pub payload: Option<Vec<u8>>,
 }
 
+#[derive(PartialEq)]
+enum KafkaConsumerState {
+    NotSubscribed,
+    Consuming,
+    Error,
+    Closed,
+    #[allow(dead_code)]
+    Assigning,
+    #[allow(dead_code)]
+    Revoking,
+}
+
 fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
     let topic = Topic {
         name: msg.topic().to_string(),
@@ -112,6 +124,8 @@ pub struct KafkaConsumer {
     // in the constructor.
     consumer: Option<BaseConsumer<CustomContext>>,
     config: KafkaConfig,
+    state: KafkaConsumerState,
+    offsets: HashMap<Partition, u64>,
     staged_offsets: HashMap<Partition, Position>,
 }
 
@@ -120,6 +134,8 @@ impl KafkaConsumer {
         Self {
             consumer: None,
             config,
+            state: KafkaConsumerState::NotSubscribed,
+            offsets: HashMap::new(),
             staged_offsets: HashMap::new(),
         }
     }
@@ -145,6 +161,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
             .subscribe(&topic_str)
             .expect("Can't subscribe to specified topics");
         self.consumer = Some(consumer);
+        self.state = KafkaConsumerState::Consuming;
         Ok(())
     }
 
@@ -189,8 +206,17 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerClosed> {
-        //TODO: Implement this
-        Ok(HashMap::new())
+        if [
+            KafkaConsumerState::Closed,
+            KafkaConsumerState::Error,
+            KafkaConsumerState::NotSubscribed,
+        ]
+        .contains(&self.state)
+        {
+            return Err(ConsumerClosed);
+        }
+
+        Ok(self.offsets.clone())
     }
 
     fn seek(&self, _: HashMap<Partition, u64>) -> Result<(), ConsumeError> {
@@ -269,4 +295,21 @@ mod tests {
 
     #[test]
     fn test_commit() {}
+
+    #[test]
+    fn test_tell() {
+        let configuration = KafkaConfig::new_consumer_config(
+            vec!["localhost:9092".to_string()],
+            "my-group".to_string(),
+            "latest".to_string(),
+        );
+        let mut consumer = KafkaConsumer::new(configuration);
+        let topic = Topic {
+            name: "test".to_string(),
+        };
+        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
+        assert!(consumer.tell().is_err()); // Not subscribed yet
+        consumer.subscribe(&[topic], my_callbacks).unwrap();
+        assert_eq!(consumer.tell().unwrap(), HashMap::new());
+    }
 }
