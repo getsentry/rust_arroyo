@@ -186,10 +186,10 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
                 let res = consumer.poll(duration);
                 match res {
                     None => Ok(None),
-                    Some(res) => match res {
-                        Ok(msg) => Ok(Some(create_kafka_message(msg))),
-                        Err(_) => Err(PollError::ConsumerClosed),
-                    },
+                    Some(res) => {
+                        let msg = res?;
+                        Ok(Some(create_kafka_message(msg)))
+                    }
                 }
             }
         }
@@ -210,7 +210,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         Ok(HashSet::new())
     }
 
-    fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerClosed> {
+    fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerError> {
         if [
             KafkaConsumerState::Closed,
             KafkaConsumerState::Error,
@@ -218,7 +218,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         ]
         .contains(&self.state)
         {
-            return Err(ConsumerClosed);
+            return Err(ConsumerError::ConsumerClosed);
         }
 
         Ok(self.offsets.clone())
@@ -232,14 +232,14 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     fn stage_positions(
         &mut self,
         positions: HashMap<Partition, Position>,
-    ) -> Result<(), ConsumeError> {
+    ) -> Result<(), ConsumerError> {
         for (partition, position) in positions {
             self.staged_offsets.insert(partition, position);
         }
         Ok(())
     }
 
-    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed> {
+    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError> {
         let mut topic_map = HashMap::new();
         for (partition, position) in self.staged_offsets.iter() {
             topic_map.insert(
@@ -248,7 +248,10 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
             );
         }
 
-        let consumer = self.consumer.as_mut().ok_or(ConsumerClosed)?;
+        let consumer = self
+            .consumer
+            .as_mut()
+            .ok_or(ConsumerError::ConsumerClosed)?;
         let partitions = TopicPartitionList::from_topic_map(&topic_map).unwrap();
         let _ = consumer.commit(&partitions, CommitMode::Sync).unwrap();
 
