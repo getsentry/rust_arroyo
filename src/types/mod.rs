@@ -2,25 +2,11 @@ use chrono::{DateTime, Utc};
 use std::any::type_name;
 use std::cmp::Eq;
 use std::fmt;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Topic {
     pub name: String,
-}
-
-impl PartialEq for Topic {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-}
-
-impl Eq for Topic {}
-
-impl Hash for Topic {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-    }
 }
 
 impl fmt::Display for Topic {
@@ -29,14 +15,12 @@ impl fmt::Display for Topic {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Partition {
     // TODO: Make this a reference to 'static Topic.
     pub topic: Topic,
     pub index: u16,
 }
-
-impl Eq for Partition {}
 
 impl fmt::Display for Partition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -50,7 +34,7 @@ pub struct Position {
     pub timestamp: DateTime<Utc>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Message<T: Clone> {
     pub partition: Partition,
     pub offset: u64,
@@ -72,27 +56,12 @@ impl<T: Clone> Message<T> {
     }
 }
 
-impl<T: Clone> Clone for Message<T> {
-    fn clone(&self) -> Message<T> {
-        Message::new(
-            self.partition.clone(),
-            self.offset,
-            self.payload.clone(),
-            self.timestamp,
-        )
-    }
-}
-
 impl<T: Clone> fmt::Display for Message<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn type_of<V>(_: &V) -> String {
-            type_name::<V>().to_owned()
-        }
-
         write!(
             f,
             "Message<{}>(partition={}), offset={}",
-            type_of(&self.payload),
+            type_name::<T>(),
             &self.partition,
             &self.offset
         )

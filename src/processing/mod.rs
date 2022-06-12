@@ -5,6 +5,7 @@ use crate::types::{Message, Partition, Topic};
 use std::collections::HashMap;
 use std::mem::replace;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use strategies::{ProcessingStrategy, ProcessingStrategyFactory};
 
 #[derive(Debug, Clone)]
@@ -103,7 +104,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         if message_carried_over {
             // If a message was carried over from the previous run, the consumer
             // should be paused and not returning any messages on ``poll``.
-            let res = self.consumer.poll(Some(0.0)).unwrap();
+            let res = self.consumer.poll(Some(Duration::ZERO)).unwrap();
             match res {
                 None => {}
                 Some(_) => return Err(RunError::InvalidState),
@@ -111,7 +112,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         } else {
             // Otherwise, we need to try fetch a new message from the consumer,
             // even if there is no active assignment and/or processing strategy.
-            let msg = self.consumer.poll(Some(1.0));
+            let msg = self.consumer.poll(Some(Duration::from_secs(1)));
             //TODO: Support errors properly
             match msg {
                 Ok(m) => self.message = m,
@@ -131,7 +132,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
                     None => {}
                     Some(request) => {
                         self.consumer.stage_positions(request.positions).unwrap();
-                        self.consumer.commit_position().unwrap();
+                        self.consumer.commit_positions().unwrap();
                     }
                 };
 

@@ -1,6 +1,7 @@
 use super::types::{Message, Partition, Position, Topic};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
+use std::time::Duration;
 
 pub mod kafka;
 pub mod local;
@@ -79,7 +80,7 @@ pub trait Consumer<'a, TPayload: Clone> {
     /// consumer attempts to read from an invalid location in one of it's
     /// assigned partitions. (Additional details can be found in the
     /// docstring for ``Consumer.seek``.)
-    fn poll(&mut self, timeout: Option<f64>) -> Result<Option<Message<TPayload>>, ConsumerError>;
+    fn poll(&mut self, timeout: Option<Duration>) -> Result<Option<Message<TPayload>>, ConsumerError>;
 
     /// Pause consuming from the provided partitions.
     ///
@@ -135,7 +136,7 @@ pub trait Consumer<'a, TPayload: Clone> {
 
     /// Commit staged offsets. The return value of this method is a mapping
     /// of streams with their committed offsets as values.
-    fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError>;
+    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError>;
 
     fn close(&mut self, timeout: Option<f64>);
 

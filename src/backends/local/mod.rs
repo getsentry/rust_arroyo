@@ -5,7 +5,11 @@ use crate::types::{Message, Partition, Position, Topic};
 use broker::LocalBroker;
 use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
+<<<<<<< HEAD
 use thiserror::Error;
+=======
+use std::time::Duration;
+>>>>>>> main
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -113,7 +117,11 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         Ok(())
     }
 
+<<<<<<< HEAD
     fn poll(&mut self, _: Option<f64>) -> Result<Option<Message<TPayload>>, ConsumerError> {
+=======
+    fn poll(&mut self, _timeout: Option<Duration>) -> Result<Option<Message<TPayload>>, PollError> {
+>>>>>>> main
         if self.closed {
             return Err(ConsumerError::ConsumerClosed);
         }
@@ -241,6 +249,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         if self.closed {
             return Err(ConsumerError::ConsumerClosed);
         }
+<<<<<<< HEAD
         let assigned_partitions = self.subscription_state.offsets.keys().cloned().collect();
         let requested_partitions: HashSet<_> = positions.keys().cloned().collect();
         let diff: HashSet<_> = requested_partitions
@@ -248,6 +257,15 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
             .collect();
         if !diff.is_empty() {
             return Err(ConsumerError::UnassignedPartition);
+=======
+        let assigned_partitions: HashSet<&Partition> =
+            self.subscription_state.offsets.keys().collect();
+        let requested_partitions: HashSet<&Partition> = positions.keys().collect();
+        let diff = requested_partitions.difference(&assigned_partitions);
+
+        if diff.count() > 0 {
+            return Err(ConsumeError::ConsumerError);
+>>>>>>> main
         }
         for (partition, position) in positions {
             self.subscription_state
@@ -257,7 +275,11 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         Ok(())
     }
 
+<<<<<<< HEAD
     fn commit_position(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError> {
+=======
+    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed> {
+>>>>>>> main
         if self.closed {
             return Err(ConsumerError::ConsumerClosed);
         }
@@ -304,6 +326,7 @@ mod tests {
     use crate::utils::clock::SystemClock;
     use chrono::Utc;
     use std::collections::{HashMap, HashSet};
+    use std::time::Duration;
     use uuid::Uuid;
 
     struct EmptyCallbacks {}
@@ -349,7 +372,7 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(consumer.pending_callback.len(), 1);
 
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(Some(Duration::from_millis(100)));
         let expected = HashMap::from([
             (
                 Partition {
@@ -379,7 +402,7 @@ mod tests {
         let res = consumer.unsubscribe();
         assert!(res.is_ok());
         assert_eq!(consumer.pending_callback.len(), 1);
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(Some(Duration::from_millis(100)));
         assert!(consumer.subscription_state.offsets.is_empty());
     }
 
@@ -463,10 +486,10 @@ mod tests {
             LocalConsumer::new(Uuid::nil(), &mut broker, "test_group".to_string(), true);
 
         let _ = consumer.subscribe(&[topic1, topic2], my_callbacks);
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(Some(Duration::from_millis(100)));
 
         let _ = consumer.unsubscribe();
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(Some(Duration::from_millis(100)));
     }
 
     #[test]
@@ -509,21 +532,21 @@ mod tests {
 
         let _ = consumer.subscribe(&[topic2], my_callbacks);
 
-        let msg1 = consumer.poll(Some(0.1)).unwrap();
+        let msg1 = consumer.poll(Some(Duration::from_millis(100))).unwrap();
         assert!(msg1.is_some());
         let msg_content = msg1.unwrap();
         assert_eq!(msg_content.offset, 0);
         assert_eq!(msg_content.next_offset(), 1);
         assert_eq!(msg_content.payload, "message1".to_string());
 
-        let msg2 = consumer.poll(Some(0.1)).unwrap();
+        let msg2 = consumer.poll(Some(Duration::from_millis(100))).unwrap();
         assert!(msg2.is_some());
         let msg_content = msg2.unwrap();
         assert_eq!(msg_content.offset, 1);
         assert_eq!(msg_content.next_offset(), 2);
         assert_eq!(msg_content.payload, "message2".to_string());
 
-        let ret = consumer.poll(Some(0.1));
+        let ret = consumer.poll(Some(Duration::from_millis(100)));
         assert!(ret.is_err());
     }
 
@@ -542,7 +565,7 @@ mod tests {
             LocalConsumer::new(Uuid::nil(), &mut broker, "test_group".to_string(), false);
         let _ = consumer.subscribe(&[topic2], my_callbacks);
 
-        assert_eq!(consumer.poll(Some(0.1)).unwrap(), None);
+        assert_eq!(consumer.poll(None).unwrap(), None);
         let _ = consumer.pause(HashSet::from([partition.clone()]));
         assert_eq!(
             consumer.paused().unwrap(),
@@ -550,7 +573,7 @@ mod tests {
         );
 
         let _ = consumer.resume(HashSet::from([partition]));
-        assert_eq!(consumer.poll(Some(0.1)).unwrap(), None);
+        assert_eq!(consumer.poll(None).unwrap(), None);
     }
 
     #[test]
@@ -563,10 +586,10 @@ mod tests {
             name: "test2".to_string(),
         };
         let _ = consumer.subscribe(&[topic2.clone()], my_callbacks);
-        let _ = consumer.poll(Some(0.1));
+        let _ = consumer.poll(None);
         let positions = HashMap::from([(
             Partition {
-                topic: topic2,
+                topic: topic2.clone(),
                 index: 0,
             },
             Position {
@@ -577,8 +600,23 @@ mod tests {
         let stage_result = consumer.stage_positions(positions.clone());
         assert!(stage_result.is_ok());
 
-        let offsets = consumer.commit_position();
+        let offsets = consumer.commit_positions();
         assert!(offsets.is_ok());
         assert_eq!(offsets.unwrap(), positions);
+
+        // Stage invalid positions
+        let invalid_positions = HashMap::from([(
+            Partition {
+                topic: topic2,
+                index: 1,
+            },
+            Position {
+                offset: 100,
+                timestamp: Utc::now(),
+            },
+        )]);
+
+        let stage_result = consumer.stage_positions(invalid_positions);
+        assert!(stage_result.is_err());
     }
 }
