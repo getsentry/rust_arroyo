@@ -3,6 +3,13 @@ format:
 	cargo +stable fmt --all
 .PHONY: format
 
+build: setup-git
+	cargo +stable build
+.PHONY: build
+
+release: setup-git
+	@cargo +stable build --release
+.PHONY: release
 
 setup-git: .git/hooks/pre-commit
 .PHONY: setup-git
