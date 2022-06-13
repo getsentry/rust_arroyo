@@ -13,26 +13,22 @@ pub struct LocalBroker<TPayload: Clone> {
     subscriptions: HashMap<String, HashMap<Uuid, Vec<Topic>>>,
 }
 
-#[derive(Debug, Clone)]
-pub enum SubscriptionError {
-    TopicDoesNotExist,
+#[derive(Error, Debug, Clone)]
+#[error(transparent)]
+pub enum BrokerError {
+    #[error("Partition does not exist")]
     PartitionDoesNotExist,
+
+    #[error("Rebalance not supported")]
     RebalanceNotSupported,
+
+    #[error("Topci does not exist")]
+    TopicDoesNotExist,
 }
 
-#[derive(Error, Debug)]
-#[error("Partition does not exist")]
-pub struct PartitionDoesNotExist;
-
-impl From<PartitionDoesNotExist> for SubscriptionError {
-    fn from(_: PartitionDoesNotExist) -> Self {
-        SubscriptionError::PartitionDoesNotExist
-    }
-}
-
-impl From<TopicDoesNotExist> for SubscriptionError {
+impl From<TopicDoesNotExist> for BrokerError {
     fn from(_: TopicDoesNotExist) -> Self {
-        SubscriptionError::TopicDoesNotExist
+        BrokerError::TopicDoesNotExist
     }
 }
 
@@ -69,7 +65,7 @@ impl<TPayload: Clone> LocalBroker<TPayload> {
         consumer_id: Uuid,
         consumer_group: String,
         topics: Vec<Topic>,
-    ) -> Result<HashMap<Partition, u64>, SubscriptionError> {
+    ) -> Result<HashMap<Partition, u64>, BrokerError> {
         // Handle rebalancing request which is not supported
         let group_subscriptions = self.subscriptions.get(&consumer_group);
         if let Some(group_s) = group_subscriptions {
@@ -81,10 +77,10 @@ impl<TPayload: Clone> LocalBroker<TPayload> {
                     .zip(&topics)
                     .filter(|&(a, b)| a.name != b.name);
                 if non_matches.next().is_some() {
-                    return Err(SubscriptionError::RebalanceNotSupported);
+                    return Err(BrokerError::RebalanceNotSupported);
                 }
             } else {
-                return Err(SubscriptionError::RebalanceNotSupported);
+                return Err(BrokerError::RebalanceNotSupported);
             }
         }
 
@@ -124,11 +120,7 @@ impl<TPayload: Clone> LocalBroker<TPayload> {
         Ok(assignments)
     }
 
-    pub fn unsubscribe(
-        &mut self,
-        id: Uuid,
-        group: String,
-    ) -> Result<Vec<Partition>, SubscriptionError> {
+    pub fn unsubscribe(&mut self, id: Uuid, group: String) -> Result<Vec<Partition>, BrokerError> {
         let mut ret_partitions = Vec::new();
         let group_subscriptions = self.subscriptions.get_mut(&group).unwrap();
         let subscribed_topics = group_subscriptions.get(&id).unwrap();

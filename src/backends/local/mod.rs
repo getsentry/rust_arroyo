@@ -6,15 +6,10 @@ use broker::LocalBroker;
 use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
-use thiserror::Error;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct RebalanceNotSupported;
-
-#[derive(Error, Debug)]
-#[error("Not Implemented")]
-pub struct NotImplementedError;
 
 enum Callback {
     Assign(HashMap<Partition, u64>),
@@ -235,7 +230,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         if self.closed {
             return Err(ConsumerError::ConsumerClosed);
         }
-        Err(ConsumerError::Other(Box::new(NotImplementedError)))
+        unimplemented!("Seek is not implemented");
     }
 
     fn stage_positions(

@@ -1,3 +1,4 @@
+use super::types::errors::KafkaErrorCode;
 use super::types::{Message, Partition, Position, Topic};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
@@ -7,6 +8,7 @@ pub mod kafka;
 pub mod local;
 pub mod storages;
 
+#[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum ConsumerError {
     #[error("End of partition reached")]
@@ -18,9 +20,11 @@ pub enum ConsumerError {
     #[error("Partition not assigned to consumer")]
     UnassignedPartition,
 
-    // Pretty much any useful error.
+    #[error("Error fetching offset")]
+    OffsetFetch(KafkaErrorCode),
+
     #[error(transparent)]
-    Other(#[from] Box<dyn std::error::Error>),
+    BrokerError(#[from] Box<dyn std::error::Error>),
 }
 
 /// This is basically an observer pattern to receive the callbacks from

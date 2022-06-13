@@ -4,6 +4,8 @@ use std::cmp::Eq;
 use std::fmt;
 use std::hash::Hash;
 
+pub mod errors;
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Topic {
     pub name: String,

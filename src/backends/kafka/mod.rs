@@ -7,7 +7,7 @@ use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::base_consumer::BaseConsumer;
 use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
-use rdkafka::error::{KafkaError, KafkaResult};
+use rdkafka::error::KafkaResult;
 use rdkafka::message::{BorrowedHeaders, BorrowedMessage, Message, OwnedHeaders};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use std::collections::HashMap;
@@ -15,6 +15,8 @@ use std::collections::HashSet;
 use std::mem;
 use std::sync::Mutex;
 use std::time::Duration;
+
+mod mappings;
 
 #[derive(Clone)]
 pub struct KafkaPayload {
@@ -110,12 +112,6 @@ impl ConsumerContext for CustomContext {
 
     fn commit_callback(&self, _: KafkaResult<()>, _offsets: &TopicPartitionList) {
         println!("COMMIT");
-    }
-}
-
-impl From<KafkaError> for ConsumerError {
-    fn from(err: KafkaError) -> Self {
-        ConsumerError::Other(Box::new(err))
     }
 }
 
