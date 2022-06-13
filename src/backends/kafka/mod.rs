@@ -284,6 +284,8 @@ mod tests {
             vec!["localhost:9092".to_string()],
             "my-group".to_string(),
             "latest".to_string(),
+            false,
+            None,
         );
         let mut consumer = KafkaConsumer::new(configuration);
         let topic = Topic {
@@ -302,6 +304,8 @@ mod tests {
             vec!["localhost:9092".to_string()],
             "my-group".to_string(),
             "latest".to_string(),
+            false,
+            None,
         );
         let mut consumer = KafkaConsumer::new(configuration);
         let topic = Topic {

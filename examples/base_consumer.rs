@@ -18,6 +18,8 @@ fn main() {
         vec!["localhost:9092".to_string()],
         "my_group".to_string(),
         "latest".to_string(),
+        false,
+        None,
     );
     let mut consumer = KafkaConsumer::new(config);
     let topic = Topic {

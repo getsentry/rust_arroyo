@@ -10,19 +10,28 @@ pub struct KafkaConfig {
 }
 
 impl KafkaConfig {
-    pub fn new_config(bootstrap_servers: Vec<String>) -> Self {
-        let mut config = HashMap::new();
-        config.insert("bootstrap.servers".to_string(), bootstrap_servers.join(","));
+    pub fn new_config(
+        bootstrap_servers: Vec<String>,
+        override_params: Option<HashMap<String, String>>,
+    ) -> Self {
+        let mut config_map = HashMap::new();
+        config_map.insert("bootstrap.servers".to_string(), bootstrap_servers.join(","));
 
-        Self { config_map: config }
+        let config = Self {
+            config_map: config_map,
+        };
+
+        apply_override_params(config, override_params)
     }
 
     pub fn new_consumer_config(
         bootstrap_servers: Vec<String>,
         group_id: String,
         auto_offset_reset: String,
+        _strict_offset_reset: bool, // TODO: Implement this
+        override_params: Option<HashMap<String, String>>,
     ) -> Self {
-        let mut config = KafkaConfig::new_config(bootstrap_servers);
+        let mut config = KafkaConfig::new_config(bootstrap_servers, None);
         config.config_map.insert("group.id".to_string(), group_id);
         config
             .config_map
@@ -38,34 +47,17 @@ impl KafkaConfig {
             "queued.min.messages".to_string(),
             DEFAULT_QUEUED_MIN_MESSAGES.to_string(),
         );
-        config
+
+        apply_override_params(config, override_params)
     }
 
-    pub fn new_producer_config(bootstrap_servers: Vec<String>) -> Self {
-        KafkaConfig::new_config(bootstrap_servers)
-    }
+    pub fn new_producer_config(
+        bootstrap_servers: Vec<String>,
+        override_params: Option<HashMap<String, String>>,
+    ) -> Self {
+        let config = KafkaConfig::new_config(bootstrap_servers, None);
 
-    pub fn set_queued_max_messages_kbytes(&mut self, max_messages_kbytes: u32) {
-        // Consumer configuration
-        self.config_map.insert(
-            "queued.max.messages.kbytes".to_string(),
-            max_messages_kbytes.to_string(),
-        );
-    }
-
-    pub fn set_queued_min_messages(&mut self, min_messages: u32) {
-        // Consumer configuration
-        self.config_map
-            .insert("queued.min.messages".to_string(), min_messages.to_string());
-    }
-
-    pub fn set_strict_offset_reset(&mut self, _strict_offset_reset: bool) {
-        // Consumer configuration
-        unimplemented!();
-    }
-
-    pub fn set_override_param(&mut self, param: String, value: String) {
-        self.config_map.insert(param, value);
+        apply_override_params(config, override_params)
     }
 }
 
@@ -79,20 +71,40 @@ impl From<KafkaConfig> for RdKafkaConfig {
     }
 }
 
+fn apply_override_params(
+    mut config: KafkaConfig,
+    override_params: Option<HashMap<String, String>>,
+) -> KafkaConfig {
+    match override_params {
+        Some(params) => {
+            for (param, value) in params {
+                config.config_map.insert(param, value);
+            }
+        }
+        None => {}
+    }
+    config
+}
+
 #[cfg(test)]
 mod tests {
     use super::{KafkaConfig, DEFAULT_QUEUED_MIN_MESSAGES};
     use rdkafka::config::ClientConfig as RdKafkaConfig;
+    use std::collections::HashMap;
 
     #[test]
     fn test_build_consumer_configuration() {
-        let mut config = KafkaConfig::new_consumer_config(
+        let config = KafkaConfig::new_consumer_config(
             vec!["localhost:9092".to_string()],
             "my-group".to_string(),
             "error".to_string(),
+            false,
+            Some(HashMap::from([(
+                "queued.max.messages.kbytes".to_string(),
+                "1000000".to_string(),
+            )])),
         );
 
-        config.set_queued_max_messages_kbytes(1_000_000);
         let rdkafka_config: RdKafkaConfig = config.into();
         assert_eq!(
             rdkafka_config.get("queued.min.messages"),
