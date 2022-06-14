@@ -7,6 +7,7 @@ WORKDIR /usr/src/rust-arroyo
 
 COPY . .
 
-RUN cargo build
+RUN rustup toolchain install stable
+RUN make release
 
-# CMD ["cargo run --example base_procesor"]
+CMD ["./target/release/errors-consumer"]
