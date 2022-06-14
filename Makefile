@@ -8,7 +8,7 @@ build: setup-git
 .PHONY: build
 
 release: setup-git
-	@cargo +stable build --release
+	cargo +stable build --release
 .PHONY: release
 
 setup-git: .git/hooks/pre-commit
