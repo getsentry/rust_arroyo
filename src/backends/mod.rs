@@ -13,6 +13,9 @@ pub enum ConsumerError {
     #[error("End of partition reached")]
     EndOfPartition,
 
+    #[error("Invalid consumer state")]
+    InvalidConsumerState,
+
     #[error("The consumer is closed")]
     ConsumerClosed,
 
