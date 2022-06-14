@@ -1,39 +1,29 @@
 use super::types::{Message, Partition, Position, Topic};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
+use thiserror::Error;
 
 pub mod kafka;
 pub mod local;
 pub mod storages;
 
-#[derive(Debug, Clone)]
-pub struct ConsumerClosed;
-
-#[derive(Debug, Clone)]
-pub struct EndOfPartition;
-
-#[derive(Debug, Clone)]
-pub enum PollError {
-    ConsumerClosed,
+#[non_exhaustive]
+#[derive(Error, Debug)]
+pub enum ConsumerError {
+    #[error("End of partition reached")]
     EndOfPartition,
-}
 
-#[derive(Debug, Clone)]
-pub struct UnassignedPartition;
-
-#[derive(Debug, Clone)]
-pub enum PauseError {
+    #[error("The consumer is closed")]
     ConsumerClosed,
+
+    #[error("Partition not assigned to consumer")]
     UnassignedPartition,
-}
 
-#[derive(Debug, Clone)]
-pub struct ConsumerError;
+    #[error("Offset out of range")]
+    OffsetOutOfRange { source: Box<dyn std::error::Error> },
 
-#[derive(Debug, Clone)]
-pub enum ConsumeError {
-    ConsumerClosed,
-    ConsumerError,
+    #[error(transparent)]
+    BrokerError(#[from] Box<dyn std::error::Error>),
 }
 
 /// This is basically an observer pattern to receive the callbacks from
@@ -82,9 +72,9 @@ pub trait Consumer<'a, TPayload: Clone> {
         &mut self,
         topic: &[Topic],
         callbacks: Box<dyn AssignmentCallbacks>,
-    ) -> Result<(), ConsumerClosed>;
+    ) -> Result<(), ConsumerError>;
 
-    fn unsubscribe(&mut self) -> Result<(), ConsumerClosed>;
+    fn unsubscribe(&mut self) -> Result<(), ConsumerError>;
 
     /// Fetch a message from the consumer. If no message is available before
     /// the timeout, ``None`` is returned.
@@ -93,7 +83,10 @@ pub trait Consumer<'a, TPayload: Clone> {
     /// consumer attempts to read from an invalid location in one of it's
     /// assigned partitions. (Additional details can be found in the
     /// docstring for ``Consumer.seek``.)
-    fn poll(&mut self, timeout: Option<Duration>) -> Result<Option<Message<TPayload>>, PollError>;
+    fn poll(
+        &mut self,
+        timeout: Option<Duration>,
+    ) -> Result<Option<Message<TPayload>>, ConsumerError>;
 
     /// Pause consuming from the provided partitions.
     ///
@@ -109,19 +102,19 @@ pub trait Consumer<'a, TPayload: Clone> {
     ///
     /// If any of the provided partitions are not in the assignment set, an
     /// exception will be raised and no partitions will be paused.
-    fn pause(&mut self, partitions: HashSet<Partition>) -> Result<(), PauseError>;
+    fn pause(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError>;
 
     /// Resume consuming from the provided partitions.
     ///
     /// If any of the provided partitions are not in the assignment set, an
     /// exception will be raised and no partitions will be resumed.
-    fn resume(&mut self, partitions: HashSet<Partition>) -> Result<(), PauseError>;
+    fn resume(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError>;
 
     /// Return the currently paused partitions.
-    fn paused(&self) -> Result<HashSet<Partition>, ConsumerClosed>;
+    fn paused(&self) -> Result<HashSet<Partition>, ConsumerError>;
 
     /// Return the working offsets for all currently assigned positions.
-    fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerClosed>;
+    fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerError>;
 
     /// Update the working offsets for the provided partitions.
     ///
@@ -137,7 +130,7 @@ pub trait Consumer<'a, TPayload: Clone> {
     ///
     /// If any provided partitions are not in the assignment set, an
     /// exception will be raised and no offsets will be modified.
-    fn seek(&self, offsets: HashMap<Partition, u64>) -> Result<(), ConsumeError>;
+    fn seek(&self, offsets: HashMap<Partition, u64>) -> Result<(), ConsumerError>;
 
     /// Stage offsets to be committed. If an offset has already been staged
     /// for a given partition, that offset is overwritten (even if the offset
@@ -145,11 +138,11 @@ pub trait Consumer<'a, TPayload: Clone> {
     fn stage_positions(
         &mut self,
         positions: HashMap<Partition, Position>,
-    ) -> Result<(), ConsumeError>;
+    ) -> Result<(), ConsumerError>;
 
     /// Commit staged offsets. The return value of this method is a mapping
     /// of streams with their committed offsets as values.
-    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerClosed>;
+    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError>;
 
     fn close(&mut self, timeout: Option<f64>);
 
