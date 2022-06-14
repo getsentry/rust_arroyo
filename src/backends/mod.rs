@@ -93,7 +93,12 @@ pub trait Consumer<TPayload: Clone> {
     /// consumer attempts to read from an invalid location in one of it's
     /// assigned partitions. (Additional details can be found in the
     /// docstring for ``Consumer.seek``.)
-    fn poll(&mut self, timeout: Option<Duration>) -> Result<Option<Message<TPayload>>, PollError>;
+    fn poll<'b>(
+        &'b self,
+        timeout: Option<Duration>,
+    ) -> Result<Option<Message<TPayload>>, PollError>
+    where
+        TPayload: 'b;
 
     /// Pause consuming from the provided partitions.
     ///

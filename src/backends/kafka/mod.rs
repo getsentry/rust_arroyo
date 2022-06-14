@@ -8,7 +8,7 @@ use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::base_consumer::BaseConsumer;
 use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
-use rdkafka::message::{BorrowedHeaders, BorrowedMessage, Message, OwnedHeaders};
+use rdkafka::message::{BorrowedHeaders, BorrowedMessage, Message, OwnedHeaders, OwnedMessage};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -16,11 +16,54 @@ use std::mem;
 use std::sync::Mutex;
 use std::time::Duration;
 
-#[derive(Clone)]
-pub struct KafkaPayload {
-    pub key: Option<Vec<u8>>,
-    pub headers: Option<OwnedHeaders>,
-    pub payload: Option<Vec<u8>>,
+pub struct KafkaPayload<'a> {
+    borrowed_message: Option<BorrowedMessage<'a>>,
+    owned_message: Option<OwnedMessage>,
+}
+
+impl<'a> KafkaPayload<'a> {
+    pub fn from_borrowed_message(msg: BorrowedMessage<'a>) -> Self {
+        Self {
+            borrowed_message: Some(msg),
+            owned_message: None,
+        }
+    }
+
+    pub fn key(&self) -> Option<&[u8]> {
+        if self.borrowed_message.is_some() {
+            return self.borrowed_message?.key();
+        } else {
+            return self.owned_message?.key();
+        }
+    }
+    pub fn headers(&self) -> Option<&OwnedHeaders> {
+        if self.borrowed_message.is_some() {
+            return self
+                .borrowed_message?
+                .headers()
+                .map(BorrowedHeaders::detach)
+                .as_ref();
+        } else {
+            return self.owned_message?.headers();
+        }
+    }
+    pub fn payload(&self) -> Option<&[u8]> {
+        if self.borrowed_message.is_some() {
+            return self.borrowed_message?.payload();
+        } else {
+            return self.owned_message?.payload();
+        }
+    }
+}
+
+impl<'a> Clone for KafkaPayload<'a> {
+    fn clone(&self) -> KafkaPayload<'a> {
+        let owned_message = self.borrowed_message.unwrap().detach();
+        KafkaPayload {
+            borrowed_message: None,
+            owned_message: Some(owned_message),
+        }
+    }
 }
 
 fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
@@ -36,11 +79,7 @@ fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
     ArroyoMessage::new(
         partition,
         msg.offset() as u64,
-        KafkaPayload {
-            key: msg.key().map(|k| k.to_vec()),
-            headers: msg.headers().map(BorrowedHeaders::detach),
-            payload: msg.payload().map(|p| p.to_vec()),
-        },
+        KafkaPayload::from_borrowed_message(msg),
         DateTime::from_utc(NaiveDateTime::from_timestamp(time_millis, 0), Utc),
     )
 }
@@ -124,7 +163,7 @@ impl KafkaConsumer {
     }
 }
 
-impl ArroyoConsumer<KafkaPayload> for KafkaConsumer {
+impl<'a> ArroyoConsumer<KafkaPayload<'a>> for KafkaConsumer {
     fn subscribe(
         &mut self,
         topics: &[Topic],
@@ -154,13 +193,17 @@ impl ArroyoConsumer<KafkaPayload> for KafkaConsumer {
         Ok(())
     }
 
-    fn poll(
-        &mut self,
+    fn poll<'b>(
+        &'b self,
         timeout: Option<Duration>,
-    ) -> Result<Option<ArroyoMessage<KafkaPayload>>, PollError> {
+    ) -> Result<Option<ArroyoMessage<KafkaPayload<'a>>>, PollError>
+    where
+        KafkaPayload<'a>: 'b,
+        'a: 'b,
+    {
         let duration = timeout.unwrap_or(Duration::from_millis(100));
 
-        match self.consumer.as_mut() {
+        match self.consumer.as_ref() {
             None => Err(PollError::ConsumerClosed),
             Some(consumer) => {
                 let res = consumer.poll(duration);
