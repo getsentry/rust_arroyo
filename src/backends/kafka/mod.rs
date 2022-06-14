@@ -271,13 +271,47 @@ mod tests {
     use super::{AssignmentCallbacks, KafkaConsumer};
     use crate::backends::kafka::config::KafkaConfig;
     use crate::backends::Consumer;
-    use crate::types::{Partition, Topic};
+    use crate::types::{Partition, Position, Topic};
+    use chrono::Utc;
+    use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
+    use rdkafka::client::DefaultClientContext;
+    use rdkafka::config::ClientConfig;
     use std::collections::HashMap;
 
     struct EmptyCallbacks {}
     impl AssignmentCallbacks for EmptyCallbacks {
         fn on_assign(&mut self, _: HashMap<Partition, u64>) {}
         fn on_revoke(&mut self, _: Vec<Partition>) {}
+    }
+
+    fn get_admin_client() -> AdminClient<DefaultClientContext> {
+        let mut config = ClientConfig::new();
+        config.set(
+            "bootstrap.servers".to_string(),
+            "localhost:9092".to_string(),
+        );
+
+        config.create().unwrap()
+    }
+
+    async fn create_topic(topic_name: &str, partition_count: i32) {
+        let client = get_admin_client();
+        let topics = [NewTopic::new(
+            topic_name,
+            partition_count,
+            TopicReplication::Fixed(1),
+        )];
+        client
+            .create_topics(&topics, &AdminOptions::new())
+            .await
+            .unwrap();
+    }
+    async fn delete_topic(topic_name: &str) {
+        let client = get_admin_client();
+        client
+            .delete_topics(&[topic_name], &AdminOptions::new())
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -297,8 +331,42 @@ mod tests {
         consumer.subscribe(&[topic], my_callbacks).unwrap();
     }
 
-    #[test]
-    fn test_commit() {}
+    #[tokio::test]
+    async fn test_commit() {
+        create_topic("test", 1).await;
+
+        let configuration = KafkaConfig::new_consumer_config(
+            vec!["localhost:9092".to_string()],
+            "my-group".to_string(),
+            "latest".to_string(),
+            false,
+            None,
+        );
+
+        let mut consumer = KafkaConsumer::new(configuration);
+        let topic = Topic {
+            name: "test".to_string(),
+        };
+        let positions = HashMap::from([(
+            Partition {
+                topic: topic.clone(),
+                index: 0,
+            },
+            Position {
+                offset: 100,
+                timestamp: Utc::now(),
+            },
+        )]);
+
+        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
+        consumer.subscribe(&[topic], my_callbacks).unwrap();
+
+        consumer.stage_positions(positions.clone()).unwrap();
+        let res = consumer.commit_positions().unwrap();
+
+        assert_eq!(res, positions);
+        delete_topic("test").await;
+    }
 
     #[test]
     fn test_tell() {

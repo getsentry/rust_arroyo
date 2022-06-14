@@ -12,6 +12,9 @@ by_address = "1.0.4"
 rdkafka = { version = "0.28", features = ["cmake-build"] }
 thiserror = "1.0"
 
+[dev-dependencies]
+tokio = { version = "1.19.2", features = ["full"] }
+
 [[bin]]
 name = "errors-consumer"
 path = "src/bin/consumer/errors.rs"
