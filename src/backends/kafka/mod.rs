@@ -16,7 +16,7 @@ use std::mem;
 use std::sync::Mutex;
 use std::time::Duration;
 
-mod mappings;
+mod errors;
 
 #[derive(Clone)]
 pub struct KafkaPayload {

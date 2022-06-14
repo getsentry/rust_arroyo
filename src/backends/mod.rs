@@ -1,4 +1,3 @@
-use super::types::errors::KafkaErrorCode;
 use super::types::{Message, Partition, Position, Topic};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
@@ -20,8 +19,8 @@ pub enum ConsumerError {
     #[error("Partition not assigned to consumer")]
     UnassignedPartition,
 
-    #[error("Error fetching offset")]
-    OffsetFetch(KafkaErrorCode),
+    #[error("Offset out of range")]
+    OffsetOutOfRange { source: Box<dyn std::error::Error> },
 
     #[error(transparent)]
     BrokerError(#[from] Box<dyn std::error::Error>),
