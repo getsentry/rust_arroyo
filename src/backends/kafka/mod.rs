@@ -274,6 +274,7 @@ mod tests {
     use crate::types::{Partition, Position, Topic};
     use chrono::Utc;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
+    use rdkafka::client::DefaultClientContext;
     use rdkafka::config::ClientConfig;
     use std::collections::HashMap;
 
@@ -283,18 +284,18 @@ mod tests {
         fn on_revoke(&mut self, _: Vec<Partition>) {}
     }
 
-    async fn create_topic(topic_name: &str, partition_count: i32) {
-        let config = HashMap::from([(
+    fn get_admin_client() -> AdminClient<DefaultClientContext> {
+        let mut config = ClientConfig::new();
+        config.set(
             "bootstrap.servers".to_string(),
             "localhost:9092".to_string(),
-        )]);
+        );
 
-        let mut config_obj = ClientConfig::new();
-        for (key, val) in config.iter() {
-            config_obj.set(key, val);
-        }
+        config.create().unwrap()
+    }
 
-        let client: AdminClient<_> = config_obj.create().unwrap();
+    async fn create_topic(topic_name: &str, partition_count: i32) {
+        let client = get_admin_client();
         let topics = [NewTopic::new(
             topic_name,
             partition_count,
@@ -306,15 +307,7 @@ mod tests {
             .unwrap();
     }
     async fn delete_topic(topic_name: &str) {
-        let config = HashMap::from([(
-            "bootstrap.servers".to_string(),
-            "localhost:9092".to_string(),
-        )]);
-        let mut config_obj = ClientConfig::new();
-        for (key, val) in config.iter() {
-            config_obj.set(key, val);
-        }
-        let client: AdminClient<_> = config_obj.create().unwrap();
+        let client = get_admin_client();
         client
             .delete_topics(&[topic_name], &AdminOptions::new())
             .await
