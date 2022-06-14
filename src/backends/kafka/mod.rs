@@ -165,6 +165,12 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn unsubscribe(&mut self) -> Result<(), ConsumerError> {
+        let consumer = self
+            .consumer
+            .as_mut()
+            .ok_or(ConsumerError::ConsumerClosed)?;
+        consumer.unsubscribe();
+
         Ok(())
     }
 
@@ -256,13 +262,13 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         Ok(prev_offsets)
     }
 
-    fn close(&mut self, _: Option<f64>) {
-        //TODO: Implement this
+    fn close(&mut self) {
+        self.state = KafkaConsumerState::Closed;
+        self.consumer = None;
     }
 
     fn closed(&self) -> bool {
-        //TODO: Implement this
-        false
+        self.state == KafkaConsumerState::Closed
     }
 }
 
