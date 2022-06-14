@@ -1,5 +1,7 @@
+use super::kafka::config::KafkaConfig;
 use super::AssignmentCallbacks;
-use super::{Consumer as ArroyoConsumer, ConsumerError};
+use super::Consumer as ArroyoConsumer;
+use super::ConsumerError;
 use crate::types::Message as ArroyoMessage;
 use crate::types::{Partition, Position, Topic};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -16,6 +18,7 @@ use std::mem;
 use std::sync::Mutex;
 use std::time::Duration;
 
+pub mod config;
 mod errors;
 
 #[derive(Clone)]
@@ -122,18 +125,16 @@ pub struct KafkaConsumer {
     // So we need to build the kafka consumer upon subscribe and not
     // in the constructor.
     consumer: Option<BaseConsumer<CustomContext>>,
-    group: String,
-    config: HashMap<String, String>,
+    config: KafkaConfig,
     state: KafkaConsumerState,
     offsets: HashMap<Partition, u64>,
     staged_offsets: HashMap<Partition, Position>,
 }
 
 impl KafkaConsumer {
-    pub fn new(group: String, config: HashMap<String, String>) -> Self {
+    pub fn new(config: KafkaConfig) -> Self {
         Self {
             consumer: None,
-            group,
             config,
             state: KafkaConsumerState::NotSubscribed,
             offsets: HashMap::new(),
@@ -151,11 +152,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         let context = CustomContext {
             callbacks: Mutex::new(callbacks),
         };
-        let mut config_obj = ClientConfig::new();
-        for (key, val) in self.config.iter() {
-            config_obj.set(key, val);
-        }
-        config_obj.set("group.id", self.group.clone());
+        let mut config_obj: ClientConfig = self.config.clone().into();
+
         let consumer: BaseConsumer<CustomContext> = config_obj
             .set_log_level(RDKafkaLogLevel::Debug)
             .create_with_context(context)?;
@@ -271,6 +269,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
 #[cfg(test)]
 mod tests {
     use super::{AssignmentCallbacks, KafkaConsumer};
+    use crate::backends::kafka::config::KafkaConfig;
     use crate::backends::Consumer;
     use crate::types::{Partition, Topic};
     use std::collections::HashMap;
@@ -283,7 +282,14 @@ mod tests {
 
     #[test]
     fn test_subscribe() {
-        let mut consumer = KafkaConsumer::new("my-group".to_string(), HashMap::new());
+        let configuration = KafkaConfig::new_consumer_config(
+            vec!["localhost:9092".to_string()],
+            "my-group".to_string(),
+            "latest".to_string(),
+            false,
+            None,
+        );
+        let mut consumer = KafkaConsumer::new(configuration);
         let topic = Topic {
             name: "test".to_string(),
         };
@@ -296,7 +302,14 @@ mod tests {
 
     #[test]
     fn test_tell() {
-        let mut consumer = KafkaConsumer::new("my-group".to_string(), HashMap::new());
+        let configuration = KafkaConfig::new_consumer_config(
+            vec!["localhost:9092".to_string()],
+            "my-group".to_string(),
+            "latest".to_string(),
+            false,
+            None,
+        );
+        let mut consumer = KafkaConsumer::new(configuration);
         let topic = Topic {
             name: "test".to_string(),
         };
