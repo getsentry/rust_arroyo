@@ -1,5 +1,6 @@
 extern crate rust_arroyo;
 
+use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::{KafkaConsumer, KafkaPayload};
 use rust_arroyo::processing::strategies::{
     CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
@@ -58,15 +59,14 @@ impl ProcessingStrategyFactory<KafkaPayload> for TestFactory {
 }
 
 fn main() {
-    let config = HashMap::from([
-        ("group.id".to_string(), "my_group".to_string()),
-        (
-            "bootstrap.servers".to_string(),
-            "localhost:9092".to_string(),
-        ),
-        ("enable.auto.commit".to_string(), "false".to_string()),
-    ]);
-    let consumer = Box::new(KafkaConsumer::new("my_group".to_string(), config));
+    let config = KafkaConfig::new_consumer_config(
+        vec!["localhost:9092".to_string()],
+        "my_group".to_string(),
+        "latest".to_string(),
+        false,
+        None,
+    );
+    let consumer = Box::new(KafkaConsumer::new(config));
     let topic = Topic {
         name: "test_static".to_string(),
     };
