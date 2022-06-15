@@ -180,14 +180,10 @@ impl<'a> ArroyoConsumer<KafkaPayload<'a>> for KafkaConsumer {
         Ok(())
     }
 
-    fn poll<'b>(
-        &'b self,
+    fn poll(
+        &self,
         timeout: Option<Duration>,
-    ) -> Result<Option<ArroyoMessage<KafkaPayload<'a>>>, PollError>
-    where
-        KafkaPayload<'a>: 'b,
-        'a: 'b,
-    {
+    ) -> Result<Option<ArroyoMessage<KafkaPayload<'_>>>, PollError> {
         let duration = timeout.unwrap_or(Duration::from_millis(100));
 
         match self.consumer.as_ref() {
