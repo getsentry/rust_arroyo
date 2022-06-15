@@ -36,6 +36,12 @@ pub enum ConsumeError {
     ConsumerError,
 }
 
+#[derive(Clone)]
+pub enum Payload<'a> {
+    Kafka(kafka::KafkaPayload<'a>),
+    // Local(Vec<u8>),
+}
+
 /// This is basically an observer pattern to receive the callbacks from
 /// the consumer when partitions are assigned/revoked.
 pub trait AssignmentCallbacks: Send + Sync {
@@ -77,7 +83,7 @@ pub trait AssignmentCallbacks: Send + Sync {
 /// occurs even if the consumer retains ownership of the partition across
 /// assignments.) For this reason, it is generally good practice to ensure
 /// offsets are committed as part of the revocation callback.
-pub trait Consumer<TPayload: Clone> {
+pub trait Consumer<Payload: Clone> {
     fn subscribe(
         &mut self,
         topic: &[Topic],
@@ -93,12 +99,9 @@ pub trait Consumer<TPayload: Clone> {
     /// consumer attempts to read from an invalid location in one of it's
     /// assigned partitions. (Additional details can be found in the
     /// docstring for ``Consumer.seek``.)
-    fn poll<'b>(
-        &'b self,
-        timeout: Option<Duration>,
-    ) -> Result<Option<Message<TPayload>>, PollError>
+    fn poll<'b>(&'b self, timeout: Option<Duration>) -> Result<Option<Message<Payload>>, PollError>
     where
-        TPayload: 'b;
+        Payload: 'b;
 
     /// Pause consuming from the provided partitions.
     ///
@@ -161,13 +164,13 @@ pub trait Consumer<TPayload: Clone> {
     fn closed(&self) -> bool;
 }
 
-pub trait Producer<TPayload> {
+pub trait Producer<Payload> {
     /// Produce to a topic or partition.
     fn produce(
         &self,
         destination_topic: Option<Topic>,
         destination_partition: Option<Partition>,
-        payload: TPayload,
+        payload: Payload,
     );
 
     fn close(&self);

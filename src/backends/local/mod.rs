@@ -60,6 +60,8 @@ pub struct LocalConsumer<TPayload: Clone> {
     closed: bool,
 }
 
+type TPayload = Vec<u8>;
+
 impl<TPayload: Clone> LocalConsumer<TPayload> {
     pub fn new(
         id: Uuid,

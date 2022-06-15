@@ -16,52 +16,39 @@ use std::mem;
 use std::sync::Mutex;
 use std::time::Duration;
 
-pub struct KafkaPayload<'a> {
-    borrowed_message: Option<BorrowedMessage<'a>>,
-    owned_message: Option<OwnedMessage>,
+pub enum KafkaPayload<'a> {
+    Borrowed(BorrowedMessage<'a>),
+    Owned(OwnedMessage),
 }
 
 impl<'a> KafkaPayload<'a> {
-    pub fn from_borrowed_message(msg: BorrowedMessage<'a>) -> Self {
-        Self {
-            borrowed_message: Some(msg),
-            owned_message: None,
-        }
+    pub fn new(msg: BorrowedMessage<'a>) -> Self {
+        Self::Borrowed(msg)
     }
-
     pub fn key(&self) -> Option<&[u8]> {
-        if self.borrowed_message.is_some() {
-            return self.borrowed_message?.key();
-        } else {
-            return self.owned_message?.key();
+        match self {
+            Self::Borrowed(ref msg) => msg.key(),
+            Self::Owned(ref msg) => msg.key(),
         }
     }
-    pub fn headers(&self) -> Option<&OwnedHeaders> {
-        if self.borrowed_message.is_some() {
-            return self
-                .borrowed_message?
-                .headers()
-                .map(BorrowedHeaders::detach)
-                .as_ref();
-        } else {
-            return self.owned_message?.headers();
+    pub fn headers(&self) -> Option<OwnedHeaders> {
+        match self {
+            Self::Borrowed(ref msg) => msg.headers().map(BorrowedHeaders::detach),
+            Self::Owned(ref msg) => msg.headers().map(|x| x.as_borrowed().detach()),
         }
     }
     pub fn payload(&self) -> Option<&[u8]> {
-        if self.borrowed_message.is_some() {
-            return self.borrowed_message?.payload();
-        } else {
-            return self.owned_message?.payload();
+        match self {
+            Self::Borrowed(ref msg) => msg.payload(),
+            Self::Owned(ref msg) => msg.payload(),
         }
     }
 }
-
 impl<'a> Clone for KafkaPayload<'a> {
     fn clone(&self) -> KafkaPayload<'a> {
-        let owned_message = self.borrowed_message.unwrap().detach();
-        KafkaPayload {
-            borrowed_message: None,
-            owned_message: Some(owned_message),
+        match self {
+            Self::Borrowed(ref msg) => Self::Owned(msg.detach()),
+            Self::Owned(ref msg) => Self::Owned(msg.clone()),
         }
     }
 }
@@ -79,7 +66,7 @@ fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
     ArroyoMessage::new(
         partition,
         msg.offset() as u64,
-        KafkaPayload::from_borrowed_message(msg),
+        KafkaPayload::new(msg),
         DateTime::from_utc(NaiveDateTime::from_timestamp(time_millis, 0), Utc),
     )
 }
