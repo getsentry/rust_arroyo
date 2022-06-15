@@ -1,5 +1,5 @@
 use clap::{App, Arg};
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{stream::FuturesUnordered, Future, StreamExt};
 use log::warn;
 use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
@@ -44,20 +44,30 @@ impl ConsumerContext for CustomContext {
 // A type alias with your custom consumer can be created for convenience.
 type LoggingConsumer = StreamConsumer<CustomContext>;
 
-async fn wait_on_batch(batch: &mut FuturesUnordered<OwnedDeliveryResult>) {
+/*async fn wait_on_batch(batch: &mut FuturesUnordered<Future(Output = OwnedDeliveryResult>)) {
     // TODO: configurable batch size
+
     if batch.len() > 10 {
-        while let Some(message) = batch.next().await {
-            println!("produced message: {}", message);
+        for future in batch.iter_mut() {
+            let res = future.await;
+            match res {
+                Ok(msg) => {println!("SUCESS")}
+                Err(e) => {println!("Fail {}", e)}
+            }
         }
     }
+}*/
+
+async fn test_async_fn() -> i32 {
+    return 5;
 }
 
 async fn consume_and_print(brokers: &str, group_id: &str, source_topic: &str, dest_topic: &str) {
     let context = CustomContext {};
-    let batch = FuturesUnordered::new();
-    // TODO: make this not leak memory infinitely
-    let mut produce_batch: Vec<&str> = Vec::new();
+    // let mut batch = Vec::new();
+
+    let _batch_2 = vec![test_async_fn()];
+    // let batch_3: Vec<Future<Output = i32>> = vec![test_async_fn()];
 
     let consumer: LoggingConsumer = ClientConfig::new()
         .set("group.id", group_id)
@@ -97,17 +107,20 @@ async fn consume_and_print(brokers: &str, group_id: &str, source_topic: &str, de
                 };
                 println!("key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
                       m.key(), payload, m.topic(), m.partition(), m.offset(), m.timestamp());
-                let to_send = format!("{}", payload);
-                produce_batch.push(to_send.as_str());
-                let produce_future = producer.send(
-                    FutureRecord::to(dest_topic)
-                        .payload(&produce_batch.last().unwrap())
-                        .key("None"),
-                    Duration::from_secs(0),
-                );
+                let future_record = FutureRecord::to(dest_topic).payload(payload).key("None");
 
-                batch.push(produce_future);
+                let produce_future = producer.send(future_record, Duration::from_secs(0));
+                match produce_future.await {
+                    Ok(_msg) => {
+                        println! {"success"}
+                    }
+                    Err(e) => {
+                        println! {"error {:?}", e}
+                    }
+                }
 
+                /* batch.push(produce_future);
+                wait_on_batch(batch);*/
                 consumer.commit_message(&m, CommitMode::Async).unwrap();
             }
         };
