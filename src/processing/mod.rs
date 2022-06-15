@@ -183,7 +183,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
                             strategy.terminate();
                         }
                     }
-                    self.consumer.close(None);
+                    self.consumer.close();
                     return Err(e);
                 }
             }
@@ -197,7 +197,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     }
 
     pub fn shutdown(&mut self) {
-        self.consumer.close(None);
+        self.consumer.close();
     }
 
     pub fn tell(self) -> HashMap<Partition, u64> {
