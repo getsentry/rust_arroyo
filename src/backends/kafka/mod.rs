@@ -183,7 +183,7 @@ impl<'a> ArroyoConsumer<KafkaPayload<'a>> for KafkaConsumer {
     fn poll(
         &self,
         timeout: Option<Duration>,
-    ) -> Result<Option<ArroyoMessage<KafkaPayload<'_>>>, PollError> {
+    ) -> Result<Option<ArroyoMessage<KafkaPayload<'a>>>, PollError> {
         let duration = timeout.unwrap_or(Duration::from_millis(100));
 
         match self.consumer.as_ref() {

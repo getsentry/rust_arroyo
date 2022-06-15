@@ -131,13 +131,10 @@ impl<TPayload: Clone> Consumer<TPayload> for LocalConsumer<TPayload> {
         Ok(())
     }
 
-    fn poll<'b>(
-        &'b mut self,
+    fn poll<'a>(
+        &'a self,
         _timeout: Option<Duration>,
-    ) -> Result<Option<Message<TPayload>>, PollError>
-    where
-        TPayload: 'b,
-    {
+    ) -> Result<Option<Message<TPayload>>, PollError> {
         if self.closed {
             return Err(PollError::ConsumerClosed);
         }

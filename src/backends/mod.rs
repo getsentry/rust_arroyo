@@ -85,7 +85,7 @@ pub trait AssignmentCallbacks: Send + Sync {
 /// offsets are committed as part of the revocation callback.
 ///
 ///
-pub trait Consumer<'a, Payload: Clone> {
+pub trait Consumer<Payload: Clone> {
     fn subscribe(
         &mut self,
         topic: &[Topic],
@@ -101,7 +101,8 @@ pub trait Consumer<'a, Payload: Clone> {
     /// consumer attempts to read from an invalid location in one of it's
     /// assigned partitions. (Additional details can be found in the
     /// docstring for ``Consumer.seek``.)
-    fn poll(&self, timeout: Option<Duration>) -> Result<Option<Message<Payload<'a>>>, PollError>;
+    fn poll<'a>(&'a self, timeout: Option<Duration>)
+        -> Result<Option<Message<Payload>>, PollError>;
 
     /// Pause consuming from the provided partitions.
     ///
