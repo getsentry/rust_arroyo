@@ -7,17 +7,21 @@ pub mod kafka;
 pub mod local;
 pub mod storages;
 
+#[derive(Debug)]
+pub enum InvalidState {
+    NotSubscribed,
+    Closed,
+    Error,
+}
+
 #[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum ConsumerError {
     #[error("End of partition reached")]
     EndOfPartition,
 
-    #[error("Invalid consumer state")]
-    InvalidConsumerState,
-
-    #[error("The consumer is closed")]
-    ConsumerClosed,
+    #[error("Invalid consumer state {0:?}")]
+    InvalidConsumerState(InvalidState),
 
     #[error("Partition not assigned to consumer")]
     UnassignedPartition,

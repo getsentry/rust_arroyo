@@ -2,6 +2,7 @@ use super::kafka::config::KafkaConfig;
 use super::AssignmentCallbacks;
 use super::Consumer as ArroyoConsumer;
 use super::ConsumerError;
+use crate::backends::InvalidState;
 use crate::types::Message as ArroyoMessage;
 use crate::types::{Partition, Position, Topic};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -28,7 +29,7 @@ pub struct KafkaPayload {
     pub payload: Option<Vec<u8>>,
 }
 
-#[derive(PartialEq)]
+#[derive(Eq, Hash, PartialEq)]
 enum KafkaConsumerState {
     NotSubscribed,
     Consuming,
@@ -62,6 +63,19 @@ fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
         },
         DateTime::from_utc(NaiveDateTime::from_timestamp(time_millis, 0), Utc),
     )
+}
+
+fn assert_consumer_state(state: &KafkaConsumerState) -> Result<(), ConsumerError> {
+    match state {
+        KafkaConsumerState::Closed => {
+            Err(ConsumerError::InvalidConsumerState(InvalidState::Closed))
+        }
+        KafkaConsumerState::NotSubscribed => Err(ConsumerError::InvalidConsumerState(
+            InvalidState::NotSubscribed,
+        )),
+        KafkaConsumerState::Error => Err(ConsumerError::InvalidConsumerState(InvalidState::Error)),
+        _ => Ok(()),
+    }
 }
 
 struct CustomContext {
@@ -174,80 +188,57 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         &mut self,
         timeout: Option<Duration>,
     ) -> Result<Option<ArroyoMessage<KafkaPayload>>, ConsumerError> {
-        let duration = timeout.unwrap_or(Duration::from_millis(100));
+        assert_consumer_state(&self.state)?;
 
-        match self.consumer.as_mut() {
-            None => Err(ConsumerError::ConsumerClosed),
-            Some(consumer) => {
-                let res = consumer.poll(duration);
-                match res {
-                    None => Ok(None),
-                    Some(res) => {
-                        let msg = res?;
-                        Ok(Some(create_kafka_message(msg)))
-                    }
-                }
+        let duration = timeout.unwrap_or(Duration::from_millis(100));
+        let consumer = self.consumer.as_mut().unwrap();
+        let res = consumer.poll(duration);
+        match res {
+            None => Ok(None),
+            Some(res) => {
+                let msg = res?;
+                Ok(Some(create_kafka_message(msg)))
             }
         }
     }
 
     fn pause(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError> {
-        match self.state {
-            KafkaConsumerState::Closed => return Err(ConsumerError::ConsumerClosed),
-            KafkaConsumerState::NotSubscribed | KafkaConsumerState::Error => {
-                return Err(ConsumerError::InvalidConsumerState)
-            }
-            _ => {
-                let mut topic_map = HashMap::new();
-                for partition in partitions {
-                    let offset = *self
-                        .offsets
-                        .get(&partition)
-                        .ok_or(ConsumerError::UnassignedPartition)?;
-                    topic_map.insert(
-                        (partition.topic.name, partition.index as i32),
-                        Offset::from_raw(offset as i64),
-                    );
-                }
+        assert_consumer_state(&self.state)?;
 
-                let consumer = self
-                    .consumer
-                    .as_ref()
-                    .ok_or(ConsumerError::InvalidConsumerState)?;
-                let topic_partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-                consumer.pause(&topic_partition_list)?;
-            }
+        let mut topic_map = HashMap::new();
+        for partition in partitions {
+            let offset = *self
+                .offsets
+                .get(&partition)
+                .ok_or(ConsumerError::UnassignedPartition)?;
+            topic_map.insert(
+                (partition.topic.name, partition.index as i32),
+                Offset::from_raw(offset as i64),
+            );
         }
+
+        let consumer = self.consumer.as_ref().unwrap();
+        let topic_partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
+        consumer.pause(&topic_partition_list)?;
 
         Ok(())
     }
 
     fn resume(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError> {
-        match self.state {
-            KafkaConsumerState::Closed => Err(ConsumerError::ConsumerClosed),
-            KafkaConsumerState::NotSubscribed | KafkaConsumerState::Error => {
-                Err(ConsumerError::InvalidConsumerState)
+        assert_consumer_state(&self.state)?;
+
+        let mut topic_partition_list = TopicPartitionList::new();
+        for partition in partitions {
+            if !self.offsets.contains_key(&partition) {
+                return Err(ConsumerError::UnassignedPartition);
             }
-            _ => {
-                let mut topic_partition_list = TopicPartitionList::new();
-                for partition in partitions {
-                    if !self.offsets.contains_key(&partition) {
-                        return Err(ConsumerError::UnassignedPartition);
-                    }
-                    topic_partition_list
-                        .add_partition(&partition.topic.name, partition.index as i32);
-                }
-
-                let consumer = self
-                    .consumer
-                    .as_mut()
-                    .ok_or(ConsumerError::InvalidConsumerState)?;
-
-                consumer.resume(&topic_partition_list)?;
-
-                Ok(())
-            }
+            topic_partition_list.add_partition(&partition.topic.name, partition.index as i32);
         }
+
+        let consumer = self.consumer.as_mut().unwrap();
+        consumer.resume(&topic_partition_list)?;
+
+        Ok(())
     }
 
     fn paused(&self) -> Result<HashSet<Partition>, ConsumerError> {
@@ -256,13 +247,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerError> {
-        match self.state {
-            KafkaConsumerState::Closed => Err(ConsumerError::ConsumerClosed),
-            KafkaConsumerState::NotSubscribed | KafkaConsumerState::Error => {
-                Err(ConsumerError::InvalidConsumerState)
-            }
-            _ => Ok(self.offsets.clone()),
-        }
+        assert_consumer_state(&self.state)?;
+        Ok(self.offsets.clone())
     }
 
     fn seek(&self, _: HashMap<Partition, u64>) -> Result<(), ConsumerError> {
@@ -281,6 +267,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError> {
+        assert_consumer_state(&self.state)?;
+
         let mut topic_map = HashMap::new();
         for (partition, position) in self.staged_offsets.iter() {
             topic_map.insert(
@@ -289,10 +277,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
             );
         }
 
-        let consumer = self
-            .consumer
-            .as_mut()
-            .ok_or(ConsumerError::ConsumerClosed)?;
+        let consumer = self.consumer.as_mut().unwrap();
         let partitions = TopicPartitionList::from_topic_map(&topic_map).unwrap();
         let _ = consumer.commit(&partitions, CommitMode::Sync).unwrap();
 
