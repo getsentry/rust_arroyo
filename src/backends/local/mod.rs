@@ -1,6 +1,6 @@
 pub mod broker;
 
-use super::{AssignmentCallbacks, Consumer, ConsumerError, InvalidState};
+use super::{AssignmentCallbacks, Consumer, ConsumerError};
 use crate::types::{Message, Partition, Position, Topic};
 use broker::LocalBroker;
 use std::collections::HashSet;
@@ -75,7 +75,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         callbacks: Box<dyn AssignmentCallbacks>,
     ) -> Result<(), ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
         let offsets = self
             .broker
@@ -93,7 +93,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
 
     fn unsubscribe(&mut self) -> Result<(), ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
 
         let partitions = self
@@ -114,7 +114,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         _timeout: Option<Duration>,
     ) -> Result<Option<Message<TPayload>>, ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
 
         while !self.pending_callback.is_empty() {
@@ -182,7 +182,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
 
     fn pause(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
 
         let subscribed = self.subscription_state.offsets.keys().cloned().collect();
@@ -197,7 +197,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
 
     fn resume(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
 
         let subscribed = self.subscription_state.offsets.keys().cloned().collect();
@@ -214,21 +214,21 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
 
     fn paused(&self) -> Result<HashSet<Partition>, ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
         Ok(self.paused.clone())
     }
 
     fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
         Ok(self.subscription_state.offsets.clone())
     }
 
     fn seek(&self, _: HashMap<Partition, u64>) -> Result<(), ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
         unimplemented!("Seek is not implemented");
     }
@@ -238,7 +238,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         positions: HashMap<Partition, Position>,
     ) -> Result<(), ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
         let assigned_partitions: HashSet<&Partition> =
             self.subscription_state.offsets.keys().collect();
@@ -258,7 +258,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
 
     fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError> {
         if self.closed {
-            return Err(ConsumerError::InvalidConsumerState(InvalidState::Closed));
+            return Err(ConsumerError::ConsumerClosed);
         }
         let positions = self.subscription_state.staged_positions.clone();
 

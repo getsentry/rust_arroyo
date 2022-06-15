@@ -2,7 +2,6 @@ use super::kafka::config::KafkaConfig;
 use super::AssignmentCallbacks;
 use super::Consumer as ArroyoConsumer;
 use super::ConsumerError;
-use crate::backends::InvalidState;
 use crate::types::Message as ArroyoMessage;
 use crate::types::{Partition, Position, Topic};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -43,6 +42,17 @@ enum KafkaConsumerState {
     Revoking,
 }
 
+impl KafkaConsumerState {
+    fn assert_consuming_state(&self) -> Result<(), ConsumerError> {
+        match self {
+            KafkaConsumerState::Closed => Err(ConsumerError::ConsumerClosed),
+            KafkaConsumerState::NotSubscribed => Err(ConsumerError::NotSubscribed),
+            KafkaConsumerState::Error => Err(ConsumerError::ConsumerErrored),
+            _ => Ok(()),
+        }
+    }
+}
+
 fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
     let topic = Topic {
         name: msg.topic().to_string(),
@@ -63,19 +73,6 @@ fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
         },
         DateTime::from_utc(NaiveDateTime::from_timestamp(time_millis, 0), Utc),
     )
-}
-
-fn assert_consumer_state(state: &KafkaConsumerState) -> Result<(), ConsumerError> {
-    match state {
-        KafkaConsumerState::Closed => {
-            Err(ConsumerError::InvalidConsumerState(InvalidState::Closed))
-        }
-        KafkaConsumerState::NotSubscribed => Err(ConsumerError::InvalidConsumerState(
-            InvalidState::NotSubscribed,
-        )),
-        KafkaConsumerState::Error => Err(ConsumerError::InvalidConsumerState(InvalidState::Error)),
-        _ => Ok(()),
-    }
 }
 
 struct CustomContext {
@@ -181,7 +178,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn unsubscribe(&mut self) -> Result<(), ConsumerError> {
-        assert_consumer_state(&self.state)?;
+        self.state.assert_consuming_state()?;
         let consumer = self.consumer.as_mut().unwrap();
         consumer.unsubscribe();
 
@@ -192,7 +189,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         &mut self,
         timeout: Option<Duration>,
     ) -> Result<Option<ArroyoMessage<KafkaPayload>>, ConsumerError> {
-        assert_consumer_state(&self.state)?;
+        self.state.assert_consuming_state()?;
 
         let duration = timeout.unwrap_or(Duration::from_millis(100));
         let consumer = self.consumer.as_mut().unwrap();
@@ -207,7 +204,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn pause(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError> {
-        assert_consumer_state(&self.state)?;
+        self.state.assert_consuming_state()?;
 
         let mut topic_map = HashMap::new();
         for partition in partitions {
@@ -229,7 +226,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn resume(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError> {
-        assert_consumer_state(&self.state)?;
+        self.state.assert_consuming_state()?;
 
         let mut topic_partition_list = TopicPartitionList::new();
         for partition in partitions {
@@ -251,7 +248,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn tell(&self) -> Result<HashMap<Partition, u64>, ConsumerError> {
-        assert_consumer_state(&self.state)?;
+        self.state.assert_consuming_state()?;
         Ok(self.offsets.clone())
     }
 
@@ -271,7 +268,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError> {
-        assert_consumer_state(&self.state)?;
+        self.state.assert_consuming_state()?;
 
         let mut topic_map = HashMap::new();
         for (partition, position) in self.staged_offsets.iter() {
