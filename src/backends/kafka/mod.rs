@@ -181,10 +181,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     fn unsubscribe(&mut self) -> Result<(), ConsumerError> {
-        let consumer = self
-            .consumer
-            .as_mut()
-            .ok_or(ConsumerError::ConsumerClosed)?;
+        assert_consumer_state(&self.state)?;
+        let consumer = self.consumer.as_mut().unwrap();
         consumer.unsubscribe();
 
         Ok(())
