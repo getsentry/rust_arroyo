@@ -1,5 +1,5 @@
 use super::Consumer as ArroyoConsumer;
-use super::{AssignmentCallbacks, ConsumeError, ConsumerClosed, PauseError, PollError};
+use super::{AssignmentCallbacks, ConsumeError, ConsumerClosed, PauseError, Payload, PollError};
 use crate::types::Message as ArroyoMessage;
 use crate::types::{Partition, Position, Topic};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -53,7 +53,7 @@ impl<'a> Clone for KafkaPayload<'a> {
     }
 }
 
-fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
+fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<Payload> {
     let topic = Topic {
         name: msg.topic().to_string(),
     };
@@ -66,7 +66,7 @@ fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
     ArroyoMessage::new(
         partition,
         msg.offset() as u64,
-        KafkaPayload::new(msg),
+        Payload::Kafka(KafkaPayload::new(msg)),
         DateTime::from_utc(NaiveDateTime::from_timestamp(time_millis, 0), Utc),
     )
 }
@@ -183,7 +183,7 @@ impl ArroyoConsumer for KafkaConsumer {
     fn poll(
         &self,
         timeout: Option<Duration>,
-    ) -> Result<Option<ArroyoMessage<KafkaPayload<'_>>>, PollError> {
+    ) -> Result<Option<ArroyoMessage<Payload<'_>>>, PollError> {
         let duration = timeout.unwrap_or(Duration::from_millis(100));
 
         match self.consumer.as_ref() {
