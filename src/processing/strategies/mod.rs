@@ -1,3 +1,4 @@
+use crate::backends::Payload;
 use crate::types::{Message, Partition, Position};
 use std::collections::HashMap;
 
@@ -17,7 +18,7 @@ pub struct CommitRequest {
 ///
 /// This interface is intentionally not prescriptive, and affords a
 /// significant degree of flexibility for the various implementations.
-pub trait ProcessingStrategy<TPayload: Clone>: Send + Sync {
+pub trait ProcessingStrategy: Send + Sync {
     /// Poll the processor to check on the status of asynchronous tasks or
     /// perform other scheduled work.
     ///
@@ -40,7 +41,7 @@ pub trait ProcessingStrategy<TPayload: Clone>: Send + Sync {
     /// If the processing strategy is unable to accept a message (due to it
     /// being at or over capacity, for example), this method will raise a
     /// ``MessageRejected`` exception.
-    fn submit(&mut self, message: Message<TPayload>) -> Result<(), MessageRejected>;
+    fn submit(&mut self, message: Message<Payload>) -> Result<(), MessageRejected>;
 
     /// Close this instance. No more messages should be accepted by the
     /// instance after this method has been called.
@@ -69,10 +70,10 @@ pub trait ProcessingStrategy<TPayload: Clone>: Send + Sync {
     fn join(&mut self, timeout: Option<f64>) -> Option<CommitRequest>;
 }
 
-pub trait ProcessingStrategyFactory<TPayload: Clone>: Send + Sync {
+pub trait ProcessingStrategyFactory: Send + Sync {
     /// Instantiate and return a ``ProcessingStrategy`` instance.
     ///
     /// :param commit: A function that accepts a mapping of ``Partition``
     /// instances to offset values that should be committed.
-    fn create(&self) -> Box<dyn ProcessingStrategy<TPayload>>;
+    fn create(&self) -> Box<dyn ProcessingStrategy>;
 }

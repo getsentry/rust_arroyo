@@ -1,6 +1,6 @@
 pub mod strategies;
 
-use crate::backends::{AssignmentCallbacks, Consumer};
+use crate::backends::{AssignmentCallbacks, Consumer, Payload};
 use crate::types::{Message, Partition, Topic};
 use std::collections::HashMap;
 use std::mem::replace;
@@ -24,16 +24,16 @@ pub enum RunError {
     PauseError,
 }
 
-struct Strategies<TPayload: Clone> {
-    processing_factory: Box<dyn ProcessingStrategyFactory<TPayload>>,
-    strategy: Option<Box<dyn ProcessingStrategy<TPayload>>>,
+struct Strategies {
+    processing_factory: Box<dyn ProcessingStrategyFactory>,
+    strategy: Option<Box<dyn ProcessingStrategy>>,
 }
 
-struct Callbacks<TPayload: Clone> {
-    strategies: Arc<Mutex<Strategies<TPayload>>>,
+struct Callbacks {
+    strategies: Arc<Mutex<Strategies>>,
 }
 
-impl<TPayload: 'static + Clone> AssignmentCallbacks for Callbacks<TPayload> {
+impl AssignmentCallbacks for Callbacks {
     // TODO: Having the initialization of the strategy here
     // means that ProcessingStrategy and ProcessingStrategyFactory
     // have to be Send and Sync, which is really limiting and unnecessary.
@@ -57,8 +57,8 @@ impl<TPayload: 'static + Clone> AssignmentCallbacks for Callbacks<TPayload> {
     }
 }
 
-impl<TPayload: Clone> Callbacks<TPayload> {
-    pub fn new(strategies: Arc<Mutex<Strategies<TPayload>>>) -> Self {
+impl Callbacks {
+    pub fn new(strategies: Arc<Mutex<Strategies>>) -> Self {
         Self { strategies }
     }
 }
@@ -67,17 +67,17 @@ impl<TPayload: Clone> Callbacks<TPayload> {
 /// instance and a ``ProcessingStrategy``, ensuring that processing
 /// strategies are instantiated on partition assignment and closed on
 /// partition revocation.
-pub struct StreamProcessor<'a, TPayload: Clone> {
-    consumer: Box<dyn Consumer<TPayload> + 'a>,
-    strategies: Arc<Mutex<Strategies<TPayload>>>,
-    message: Option<Message<TPayload>>,
+pub struct StreamProcessor<'a> {
+    consumer: Box<dyn Consumer + 'a>,
+    strategies: Arc<Mutex<Strategies>>,
+    message: Option<Message<Payload<'a>>>,
     shutdown_requested: bool,
 }
 
-impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
+impl<'a> StreamProcessor<'a> {
     pub fn new(
-        consumer: Box<dyn Consumer<TPayload> + 'a>,
-        processing_factory: Box<dyn ProcessingStrategyFactory<TPayload>>,
+        consumer: Box<dyn Consumer + 'a>,
+        processing_factory: Box<dyn ProcessingStrategyFactory>,
     ) -> Self {
         let strategies = Arc::new(Mutex::new(Strategies {
             processing_factory,
