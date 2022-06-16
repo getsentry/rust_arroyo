@@ -2,6 +2,7 @@ pub mod broker;
 
 use super::storages::{PartitionDoesNotExist, TopicDoesNotExist};
 use super::{AssignmentCallbacks, ConsumeError, Consumer, ConsumerClosed, PauseError, PollError};
+use crate::backends::Payload;
 use crate::types::{Message, Partition, Position, Topic};
 use broker::LocalBroker;
 use std::collections::HashSet;
@@ -44,10 +45,10 @@ struct SubscriptionState {
     last_eof_at: HashMap<Partition, u64>,
 }
 
-pub struct LocalConsumer<TPayload: Clone> {
+pub struct LocalConsumer<'a> {
     id: Uuid,
     group: String,
-    broker: LocalBroker<TPayload>,
+    broker: LocalBroker<Payload<'a>>,
     pending_callback: VecDeque<Callback>,
     paused: HashSet<Partition>,
     // The offset that a the last ``EndOfPartition`` exception that was
@@ -60,12 +61,10 @@ pub struct LocalConsumer<TPayload: Clone> {
     closed: bool,
 }
 
-type TPayload = Vec<u8>;
-
-impl<TPayload: Clone> LocalConsumer<TPayload> {
+impl<'a> LocalConsumer<'a> {
     pub fn new(
         id: Uuid,
-        broker: LocalBroker<TPayload>,
+        broker: LocalBroker<Payload<'a>>,
         group: String,
         enable_end_of_partition: bool,
     ) -> Self {
@@ -90,7 +89,7 @@ impl<TPayload: Clone> LocalConsumer<TPayload> {
     }
 }
 
-impl<TPayload: Clone> Consumer for LocalConsumer<TPayload> {
+impl<'a> Consumer for LocalConsumer<'a> {
     fn subscribe(
         &mut self,
         topics: &[Topic],
@@ -131,10 +130,7 @@ impl<TPayload: Clone> Consumer for LocalConsumer<TPayload> {
         Ok(())
     }
 
-    fn poll<'a>(
-        &'a self,
-        _timeout: Option<Duration>,
-    ) -> Result<Option<Message<TPayload>>, PollError> {
+    fn poll(&self, _timeout: Option<Duration>) -> Result<Option<Message<Payload>>, PollError> {
         if self.closed {
             return Err(PollError::ConsumerClosed);
         }
@@ -165,7 +161,7 @@ impl<TPayload: Clone> Consumer for LocalConsumer<TPayload> {
 
         let keys = self.subscription_state.offsets.keys();
         let mut new_offset: Option<(Partition, u64)> = None;
-        let mut ret_message: Option<Message<TPayload>> = None;
+        let mut ret_message: Option<Message<Payload>> = None;
         for partition in keys.collect::<Vec<_>>() {
             if self.paused.contains(partition) {
                 continue;
