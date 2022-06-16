@@ -150,7 +150,7 @@ impl KafkaConsumer {
     }
 }
 
-impl<'a> ArroyoConsumer<KafkaPayload<'a>> for KafkaConsumer {
+impl ArroyoConsumer for KafkaConsumer {
     fn subscribe(
         &mut self,
         topics: &[Topic],
@@ -183,7 +183,7 @@ impl<'a> ArroyoConsumer<KafkaPayload<'a>> for KafkaConsumer {
     fn poll(
         &self,
         timeout: Option<Duration>,
-    ) -> Result<Option<ArroyoMessage<KafkaPayload<'a>>>, PollError> {
+    ) -> Result<Option<ArroyoMessage<KafkaPayload<'_>>>, PollError> {
         let duration = timeout.unwrap_or(Duration::from_millis(100));
 
         match self.consumer.as_ref() {
