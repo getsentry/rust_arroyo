@@ -90,7 +90,7 @@ impl<TPayload: Clone> LocalConsumer<TPayload> {
     }
 }
 
-impl<TPayload: Clone> Consumer<TPayload> for LocalConsumer<TPayload> {
+impl<TPayload: Clone> Consumer for LocalConsumer<TPayload> {
     fn subscribe(
         &mut self,
         topics: &[Topic],
