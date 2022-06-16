@@ -144,7 +144,7 @@ pub trait Consumer<'a, TPayload: Clone> {
     /// of streams with their committed offsets as values.
     fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError>;
 
-    fn close(&mut self, timeout: Option<f64>);
+    fn close(&mut self);
 
     fn closed(&self) -> bool;
 }
