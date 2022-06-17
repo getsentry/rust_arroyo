@@ -90,7 +90,6 @@ impl ConsumerContext for CustomContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
         match rebalance {
             Rebalance::Assign(list) => {
-                println!("REBALANCE ASSIGN!");
                 let mut map: HashMap<Partition, u64> = HashMap::new();
                 for partition in list.elements().iter() {
                     let topic = partition.topic();
