@@ -29,8 +29,8 @@ impl Producer<KafkaPayload> for KafkaProducer {
         };
 
         // TODO: Fix the KafkaPayload type to avoid all this cloning
-        let msg_payload = payload.clone().payload.unwrap_or(vec![]);
-        let msg_key = payload.clone().key.unwrap_or(vec![]);
+        let msg_payload = payload.clone().payload.unwrap_or_default();
+        let msg_key = payload.clone().key.unwrap_or_default();
 
         let mut base_record = BaseRecord::to(topic).payload(&msg_payload).key(&msg_key);
 
@@ -39,8 +39,8 @@ impl Producer<KafkaPayload> for KafkaProducer {
             TopicOrPartition::Partition(partition) => Some(partition.index),
         };
 
-        if partition.is_some() {
-            base_record = base_record.partition(partition.unwrap() as i32)
+        if let Some(index) = partition {
+            base_record = base_record.partition(index as i32)
         }
 
         let producer = self.producer.as_ref().expect("Not closed");
