@@ -2,6 +2,7 @@ use super::kafka::config::KafkaConfig;
 use super::AssignmentCallbacks;
 use super::Consumer as ArroyoConsumer;
 use super::ConsumerError;
+use crate::backends::kafka::types::KafkaPayload;
 use crate::types::Message as ArroyoMessage;
 use crate::types::{Partition, Position, Topic};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -10,7 +11,7 @@ use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::base_consumer::BaseConsumer;
 use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
-use rdkafka::message::{BorrowedHeaders, BorrowedMessage, Message, OwnedHeaders};
+use rdkafka::message::{BorrowedHeaders, BorrowedMessage, Message};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -20,13 +21,8 @@ use std::time::Duration;
 
 pub mod config;
 mod errors;
-
-#[derive(Clone, Debug)]
-pub struct KafkaPayload {
-    pub key: Option<Vec<u8>>,
-    pub headers: Option<OwnedHeaders>,
-    pub payload: Option<Vec<u8>>,
-}
+pub mod producer;
+pub mod types;
 
 #[derive(Eq, Hash, PartialEq)]
 enum KafkaConsumerState {
