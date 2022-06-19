@@ -5,12 +5,11 @@ use crate::types::TopicOrPartition;
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{BaseProducer, BaseRecord};
 
-struct KafkaProducer {
+pub struct KafkaProducer {
     producer: Option<BaseProducer>,
 }
 
 impl KafkaProducer {
-    #[allow(dead_code)] // TODO: Figure out why this is needed and remove
     pub fn new(config: KafkaConfig) -> Self {
         let config_obj: ClientConfig = config.into();
         let base_producer: BaseProducer<_> = config_obj.create().unwrap();
