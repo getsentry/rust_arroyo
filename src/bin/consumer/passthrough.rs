@@ -1,7 +1,5 @@
 use clap::{App, Arg};
-use futures::future::join_all;
 use futures::future::try_join_all;
-use futures::{stream::FuturesUnordered, Future, StreamExt};
 use log::warn;
 use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
@@ -9,27 +7,12 @@ use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
 use rdkafka::message::Message;
-use rdkafka::message::OwnedMessage;
-use rdkafka::producer::future_producer::OwnedDeliveryResult;
-use rdkafka::producer::DeliveryFuture;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::topic_partition_list::TopicPartitionList;
 use rdkafka::util::get_rdkafka_version;
 use std::boxed::Box;
-use std::rc::Rc;
 use std::time::Duration;
-use tokio::spawn;
-use tokio::sync::mpsc;
 
-// use crate::example_utils::setup_logger;
-
-// mod example_utils;
-//
-//
-
-// A context can be used to change the behavior of producers and consumers by adding callbacks
-// that will be executed by librdkafka.
-// This particular context sets up custom callbacks to log rebalancing events.
 struct CustomContext;
 
 impl ClientContext for CustomContext {}
@@ -51,15 +34,9 @@ impl ConsumerContext for CustomContext {
 // A type alias with your custom consumer can be created for convenience.
 type LoggingConsumer = StreamConsumer<CustomContext>;
 
-async fn consume_and_print(
-    sender: mpsc::Sender<OwnedMessage>,
-    brokers: &str,
-    group_id: &str,
-    source_topic: &str,
-    dest_topic: &str,
-) {
+async fn consume_and_print(brokers: &str, group_id: &str, source_topic: &str, dest_topic: &str) {
     let context = CustomContext {};
-    //let mut batch = Vec::new();
+    let mut batch = Vec::new();
 
     let consumer: LoggingConsumer = ClientConfig::new()
         .set("group.id", group_id)
@@ -70,8 +47,7 @@ async fn consume_and_print(
         .set("enable.auto.commit", "true")
         //.set("statistics.interval.ms", "30000")
         .set("auto.offset.reset", "smallest")
-        // TODO: this should probably not be DEBUG
-        .set_log_level(RDKafkaLogLevel::Debug)
+        .set_log_level(RDKafkaLogLevel::Warning)
         .create_with_context(context)
         .expect("Consumer creation failed");
 
@@ -79,11 +55,16 @@ async fn consume_and_print(
         .subscribe(&vec![source_topic])
         .expect("Can't subscribe to specified topics");
 
+    let producer: FutureProducer = ClientConfig::new()
+        .set("bootstrap.servers", brokers)
+        .set("message.timeout.ms", "5000")
+        .create()
+        .expect("couldn't create producer");
     loop {
         match consumer.recv().await {
             Err(e) => warn!("Kafka error: {}", e),
             Ok(m) => {
-                let payload = match m.payload_view::<str>() {
+                let payload_str = match m.payload_view::<str>() {
                     None => "",
                     Some(Ok(s)) => s,
                     Some(Err(e)) => {
@@ -92,69 +73,28 @@ async fn consume_and_print(
                     }
                 };
                 println!("key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
-                      m.key(), payload, m.topic(), m.partition(), m.offset(), m.timestamp());
+                          m.key(), payload_str, m.topic(), m.partition(), m.offset(), m.timestamp());
+                let payload_clone = m.detach();
+                let tmp_producer = producer.clone();
 
-                // batch.push(m.detach());
-                sender.send(m.detach()).await.unwrap();
+                batch.push(Box::pin(async move {
+                    return tmp_producer
+                        .send(
+                            FutureRecord::to(dest_topic)
+                                .payload(payload_clone.payload().unwrap())
+                                .key("None"),
+                            Duration::from_secs(0),
+                        )
+                        .await;
+                }));
+                if batch.len() > 10 {
+                    for r in try_join_all(batch.iter_mut()).await.iter() {
+                        println!("RESULT: {:?}", r);
+                    }
+                    batch.clear();
+                }
                 consumer.commit_message(&m, CommitMode::Async).unwrap();
             }
-        };
-    }
-}
-
-async fn produce_kafka_message<'a>(
-    producer: &'a FutureProducer,
-    record: Box<FutureRecord<'a, String, String>>,
-) -> OwnedDeliveryResult {
-    return producer.send(*record, Duration::from_secs(0)).await;
-}
-
-async fn produce_messages(
-    mut rx: mpsc::Receiver<OwnedMessage>,
-    brokers: String,
-    dest_topic: String,
-) {
-    let producer: FutureProducer = ClientConfig::new()
-        .set("bootstrap.servers", brokers)
-        .set("message.timeout.ms", "5000")
-        .create()
-        .expect("couldn't create producer");
-    let mut batch = Vec::new();
-    loop {
-        let m = rx.recv().await.unwrap();
-        let payload = match m.payload() {
-            Some(p) => p,
-            None => panic!("No payload"),
-        };
-        let payload_str = match m.payload_view::<str>() {
-            None => "",
-            Some(Ok(s)) => s,
-            Some(Err(e)) => {
-                warn!("Error while deserializing message payload: {:?}", e);
-                ""
-            }
-        };
-        println!("PRODUCE: key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
-                      m.key(), payload_str, m.topic(), m.partition(), m.offset(), m.timestamp());
-        let stupid_string = String::from_utf8(payload.to_vec()).unwrap();
-        let key = String::from("None");
-        let tmp_producer = producer.clone();
-        let tmp_dest_topic = dest_topic.clone();
-        batch.push(Box::pin(async move {
-            return tmp_producer
-                .send(
-                    FutureRecord::to(tmp_dest_topic.as_str())
-                        .payload(&stupid_string)
-                        .key(&key),
-                    Duration::from_secs(0),
-                )
-                .await;
-        }));
-        if batch.len() > 10 {
-            for r in try_join_all(batch.iter_mut()).await.iter() {
-                println!("RESULT: {:?}", r);
-            }
-            batch.clear();
         }
     }
 }
@@ -209,11 +149,5 @@ async fn main() {
     let brokers = matches.value_of("brokers").unwrap();
     let group_id = matches.value_of("group-id").unwrap();
     let dest_topic = matches.value_of("dest_topic").unwrap();
-    let (sender, receiver) = mpsc::channel::<OwnedMessage>(1000);
-    spawn(produce_messages(
-        receiver,
-        String::from(brokers),
-        String::from(dest_topic),
-    ));
-    consume_and_print(sender, brokers, group_id, source_topic, dest_topic).await
+    consume_and_print(brokers, group_id, source_topic, dest_topic).await
 }
