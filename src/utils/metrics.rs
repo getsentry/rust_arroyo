@@ -20,15 +20,17 @@ pub struct MetricsClient {
 
 impl Metrics for MetricsClient {
     fn counter(&self, key: &str, value: Option<i64>, tags: Option<HashMap<&str, &str>>) {
-        let count_value: i64;
-        if value.is_none() {
-            count_value = 1;
-        } else {
-            count_value = value.unwrap();
+        let mut count_value: i64 = 1;
+        if let Some(value) = value {
+            count_value = value;
         }
 
-        if tags.is_none() {
-            let result = self.statsd_client.count(key, count_value);
+        if let Some(tags) = tags {
+            let mut metric_builder = self.statsd_client.count_with_tags(key, count_value);
+            for (key, value) in tags {
+                metric_builder = metric_builder.with_tag(key, value);
+            }
+            let result = metric_builder.try_send();
             match result {
                 Ok(_) => {}
                 Err(_err) => {
@@ -36,12 +38,7 @@ impl Metrics for MetricsClient {
                 }
             }
         } else {
-            assert!(tags.is_some());
-            let mut metric_builder = self.statsd_client.count_with_tags(key, count_value);
-            for (key, value) in tags.unwrap() {
-                metric_builder = metric_builder.with_tag(key, value);
-            }
-            let result = metric_builder.try_send();
+            let result = self.statsd_client.count(key, count_value);
             match result {
                 Ok(_) => {}
                 Err(_err) => {
@@ -52,8 +49,12 @@ impl Metrics for MetricsClient {
     }
 
     fn gauge(&self, key: &str, value: u64, tags: Option<HashMap<&str, &str>>) {
-        if tags.is_none() {
-            let result = self.statsd_client.gauge(key, value);
+        if let Some(tags) = tags {
+            let mut metric_builder = self.statsd_client.gauge_with_tags(key, value);
+            for (key, value) in tags {
+                metric_builder = metric_builder.with_tag(key, value);
+            }
+            let result = metric_builder.try_send();
             match result {
                 Ok(_) => {}
                 Err(_err) => {
@@ -61,12 +62,7 @@ impl Metrics for MetricsClient {
                 }
             }
         } else {
-            assert!(tags.is_some());
-            let mut metric_builder = self.statsd_client.gauge_with_tags(key, value);
-            for (key, value) in tags.unwrap() {
-                metric_builder = metric_builder.with_tag(key, value);
-            }
-            let result = metric_builder.try_send();
+            let result = self.statsd_client.gauge(key, value);
             match result {
                 Ok(_) => {}
                 Err(_err) => {
@@ -77,8 +73,12 @@ impl Metrics for MetricsClient {
     }
 
     fn time(&self, key: &str, value: u64, tags: Option<HashMap<&str, &str>>) {
-        if tags.is_none() {
-            let result = self.statsd_client.time(key, value);
+        if let Some(tags) = tags {
+            let mut metric_builder = self.statsd_client.time_with_tags(key, value);
+            for (key, value) in tags {
+                metric_builder = metric_builder.with_tag(key, value);
+            }
+            let result = metric_builder.try_send();
             match result {
                 Ok(_) => {}
                 Err(_err) => {
@@ -86,12 +86,7 @@ impl Metrics for MetricsClient {
                 }
             }
         } else {
-            assert!(tags.is_some());
-            let mut metric_builder = self.statsd_client.time_with_tags(key, value);
-            for (key, value) in tags.unwrap() {
-                metric_builder = metric_builder.with_tag(key, value);
-            }
-            let result = metric_builder.try_send();
+            let result = self.statsd_client.time(key, value);
             match result {
                 Ok(_) => {}
                 Err(_err) => {
