@@ -427,9 +427,16 @@ mod tests {
         let topic = Topic {
             name: "test".to_string(),
         };
+
+        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
+        consumer.subscribe(&[topic.clone()], my_callbacks).unwrap();
+
+        // Getting the assignment may take a while, wait up to 5 seconds
+        consumer.poll(Some(Duration::from_millis(5000))).unwrap();
+
         let positions = HashMap::from([(
             Partition {
-                topic: topic.clone(),
+                topic: topic,
                 index: 0,
             },
             Position {
@@ -437,13 +444,6 @@ mod tests {
                 timestamp: Utc::now(),
             },
         )]);
-
-        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
-        consumer.subscribe(&[topic], my_callbacks).unwrap();
-
-        // Getting the assignment may take a while, wait up to 5 seconds
-        consumer.poll(Some(Duration::from_millis(5000))).unwrap();
-
         consumer.stage_positions(positions.clone()).unwrap();
         let res = consumer.commit_positions().unwrap();
         assert_eq!(res, positions);
