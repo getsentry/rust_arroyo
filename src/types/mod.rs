@@ -28,6 +28,12 @@ impl fmt::Display for Partition {
     }
 }
 
+#[derive(PartialEq)]
+pub enum TopicOrPartition {
+    Topic(Topic),
+    Partition(Partition),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Position {
     pub offset: u64,
