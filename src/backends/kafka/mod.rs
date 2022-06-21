@@ -431,10 +431,7 @@ mod tests {
         consumer.poll(Some(Duration::from_millis(5000))).unwrap();
 
         let positions = HashMap::from([(
-            Partition {
-                topic: topic,
-                index: 0,
-            },
+            Partition { topic, index: 0 },
             Position {
                 offset: 100,
                 timestamp: Utc::now(),
