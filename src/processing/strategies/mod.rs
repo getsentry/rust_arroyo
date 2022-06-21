@@ -6,6 +6,9 @@ pub mod transform;
 #[derive(Debug, Clone)]
 pub struct MessageRejected;
 
+#[derive(Debug, Clone)]
+pub struct InvalidMessage;
+
 /// Signals that we need to commit offsets
 #[derive(Clone)]
 pub struct CommitRequest {

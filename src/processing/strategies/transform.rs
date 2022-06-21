@@ -1,8 +1,10 @@
-use crate::processing::strategies::{CommitRequest, MessageRejected, ProcessingStrategy};
+use crate::processing::strategies::{
+    CommitRequest, InvalidMessage, MessageRejected, ProcessingStrategy,
+};
 use crate::types::Message;
 
 pub struct Transform<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> {
-    pub function: fn(Message<TPayload>) -> TTransformed,
+    pub function: fn(Message<TPayload>) -> Result<TTransformed, InvalidMessage>,
     pub next_step: Box<dyn ProcessingStrategy<TTransformed>>,
 }
 
@@ -14,17 +16,14 @@ impl<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> Processin
     }
 
     fn submit(&mut self, message: Message<TPayload>) -> Result<(), MessageRejected> {
-        let transformed = (self.function)(message.clone());
-
-        let partition = message.partition;
-        let offset = message.offset;
-        let timestamp = message.timestamp;
+        // TODO: Handle InvalidMessage
+        let transformed = (self.function)(message.clone()).unwrap();
 
         self.next_step.submit(Message {
-            partition,
-            offset,
+            partition: message.partition,
+            offset: message.offset,
             payload: transformed,
-            timestamp,
+            timestamp: message.timestamp,
         })
     }
 
