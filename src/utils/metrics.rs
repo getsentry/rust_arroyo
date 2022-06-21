@@ -1,6 +1,4 @@
-use cadence::{
-    BufferedUdpMetricSink, Counted, Gauged, QueuingMetricSink, StatsdClient, Timed, UdpMetricSink,
-};
+use cadence::{BufferedUdpMetricSink, Counted, Gauged, QueuingMetricSink, StatsdClient, Timed};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -124,6 +122,7 @@ pub fn init<A: ToSocketAddrs>(prefix: &str, host: A) {
         statsd_client,
         prefix: String::from(prefix),
     };
+    println!("Emitting metrics with prefix {}", metrics_client.prefix);
     *METRICS_CLIENT.write() = Some(Arc::new(metrics_client));
 }
 
