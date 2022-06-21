@@ -429,8 +429,9 @@ mod tests {
         let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
         consumer.subscribe(&[topic.clone()], my_callbacks).unwrap();
 
-        // Getting the assignment may take a while, wait up to 5 seconds
-        consumer.poll(Some(Duration::from_millis(5000))).unwrap();
+        // Getting the assignment may take a while, wait up to 10 seconds
+        consumer.poll(Some(Duration::from_millis(10_000))).unwrap();
+        sleep(Duration::from_millis(500));
 
         let positions = HashMap::from([(
             Partition { topic, index: 0 },
