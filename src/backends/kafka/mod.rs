@@ -439,7 +439,7 @@ mod tests {
 
         // Wait until the consumer got an assignment
         for _ in 0..5 {
-            consumer.poll(Some(Duration::from_millis(3_000))).unwrap();
+            consumer.poll(Some(Duration::from_millis(5_000))).unwrap();
             if consumer.tell().unwrap().len() == 1 {
                 break;
             }
