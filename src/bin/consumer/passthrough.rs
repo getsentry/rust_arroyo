@@ -1,5 +1,5 @@
 use clap::{App, Arg};
-use futures::future::try_join_all;
+use futures::future::{try_join_all, Future};
 use log::warn;
 use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
@@ -7,10 +7,14 @@ use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
 use rdkafka::message::Message;
+use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::topic_partition_list::TopicPartitionList;
+use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use rdkafka::util::get_rdkafka_version;
 use std::boxed::Box;
+use std::cmp::max;
+use std::collections::HashMap;
+use std::pin::Pin;
 use std::time::Duration;
 
 struct CustomContext;
@@ -33,8 +37,51 @@ impl ConsumerContext for CustomContext {
 
 // A type alias with your custom consumer can be created for convenience.
 type LoggingConsumer = StreamConsumer<CustomContext>;
+type FutureBatch<T> = Vec<Pin<Box<T>>>;
 
-async fn consume_and_print(brokers: &str, group_id: &str, source_topic: &str, dest_topic: &str) {
+async fn flush_batch(
+    consumer: &LoggingConsumer,
+    batch: &mut FutureBatch<impl Future<Output = OwnedDeliveryResult>>,
+    batch_size: usize,
+    source_topic: String,
+) {
+    if batch.len() > batch_size {
+        let results = try_join_all(batch.iter_mut()).await;
+        match results {
+            Err(e) => panic!("{:?}", e),
+            Ok(result_vec) => {
+                let mut positions: HashMap<(&str, i32), i64> = HashMap::new();
+                for (partition, position) in result_vec.iter() {
+                    let offset_to_commit =
+                        match positions.get_mut(&(source_topic.as_str(), *partition)) {
+                            None => *position,
+                            Some(v) => max(v.clone(), *position),
+                        };
+                    match positions.insert((source_topic.as_str(), *partition), offset_to_commit) {
+                        Some(_) => {}
+                        None => {}
+                    };
+                }
+
+                let topic_map = positions
+                    .iter()
+                    .map(|(k, v)| ((String::from(k.0), k.1), Offset::from_raw(*v)))
+                    .collect();
+                let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
+                consumer.commit(&partition_list, CommitMode::Sync).unwrap();
+            }
+        }
+        batch.clear();
+    }
+}
+
+async fn consume_and_produce(
+    brokers: &str,
+    group_id: &str,
+    source_topic: &str,
+    dest_topic: &str,
+    batch_size: usize,
+) {
     let context = CustomContext {};
     let mut batch = Vec::new();
 
@@ -44,7 +91,7 @@ async fn consume_and_print(brokers: &str, group_id: &str, source_topic: &str, de
         .set("enable.partition.eof", "false")
         .set("session.timeout.ms", "6000")
         // TODO: disable auto commit
-        .set("enable.auto.commit", "true")
+        .set("enable.auto.commit", "false")
         //.set("statistics.interval.ms", "30000")
         .set("auto.offset.reset", "smallest")
         .set_log_level(RDKafkaLogLevel::Warning)
@@ -75,6 +122,7 @@ async fn consume_and_print(brokers: &str, group_id: &str, source_topic: &str, de
                 println!("key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
                           m.key(), payload_str, m.topic(), m.partition(), m.offset(), m.timestamp());
                 let payload_clone = m.detach();
+                // this is only a pointer clone, it doesn't clone tha underlying producer
                 let tmp_producer = producer.clone();
 
                 batch.push(Box::pin(async move {
@@ -87,13 +135,13 @@ async fn consume_and_print(brokers: &str, group_id: &str, source_topic: &str, de
                         )
                         .await;
                 }));
-                if batch.len() > 10 {
-                    for r in try_join_all(batch.iter_mut()).await.iter() {
-                        println!("RESULT: {:?}", r);
-                    }
-                    batch.clear();
-                }
-                consumer.commit_message(&m, CommitMode::Async).unwrap();
+                flush_batch(
+                    &consumer,
+                    &mut batch,
+                    batch_size,
+                    String::from(source_topic),
+                )
+                .await;
             }
         }
     }
@@ -140,6 +188,13 @@ async fn main() {
                 .default_value("test_dest")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("batch_size")
+                .long("batch_size")
+                .help("size of the batch for flushing")
+                .default_value("10")
+                .takes_value(true),
+        )
         .get_matches();
 
     let (version_n, version_s) = get_rdkafka_version();
@@ -149,5 +204,10 @@ async fn main() {
     let brokers = matches.value_of("brokers").unwrap();
     let group_id = matches.value_of("group-id").unwrap();
     let dest_topic = matches.value_of("dest_topic").unwrap();
-    consume_and_print(brokers, group_id, source_topic, dest_topic).await
+    let batch_size = matches
+        .value_of("batch_size")
+        .unwrap()
+        .parse::<usize>()
+        .unwrap();
+    consume_and_produce(brokers, group_id, source_topic, dest_topic, batch_size).await;
 }
