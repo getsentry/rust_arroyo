@@ -28,8 +28,9 @@ impl Producer<KafkaPayload> for KafkaProducer {
         };
 
         // TODO: Fix the KafkaPayload type to avoid all this cloning
-        let msg_payload = payload.clone().payload.unwrap_or_default();
-        let msg_key = payload.clone().key.unwrap_or_default();
+        let payload_copy = payload.clone();
+        let msg_key = payload_copy.key.unwrap_or_default();
+        let msg_payload = payload_copy.payload.unwrap_or_default();
 
         let mut base_record = BaseRecord::to(topic).payload(&msg_payload).key(&msg_key);
 
