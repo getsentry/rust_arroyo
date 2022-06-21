@@ -430,7 +430,7 @@ mod tests {
         consumer.subscribe(&[topic.clone()], my_callbacks).unwrap();
 
         // Getting the assignment may take a while, wait up to 10 seconds
-        consumer.poll(Some(Duration::from_millis(10_000))).unwrap();
+        consumer.poll(Some(Duration::from_millis(5_000))).unwrap();
         sleep(Duration::from_millis(500));
 
         let positions = HashMap::from([(
