@@ -410,8 +410,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_commit() {
-        create_topic("test2", 1).await;
-        sleep(Duration::from_millis(100));
+        create_topic("test", 1).await;
 
         let configuration = KafkaConfig::new_consumer_config(
             vec!["localhost:9092".to_string()],
@@ -423,7 +422,7 @@ mod tests {
 
         let mut consumer = KafkaConsumer::new(configuration);
         let topic = Topic {
-            name: "test2".to_string(),
+            name: "test".to_string(),
         };
 
         let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
@@ -445,7 +444,7 @@ mod tests {
         assert_eq!(res, positions);
         consumer.unsubscribe().unwrap();
         consumer.close();
-        delete_topic("test2").await;
+        delete_topic("test").await;
     }
 
     #[test]
