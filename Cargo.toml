@@ -23,3 +23,7 @@ path = "src/bin/consumer/errors.rs"
 [[bin]]
 name = "passthrough-consumer"
 path = "src/bin/consumer/passthrough.rs"
+
+[[bin]]
+name = "async-sucks"
+path = "src/bin/consumer/async_sucks.rs"
