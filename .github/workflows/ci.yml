@@ -102,3 +102,46 @@ jobs:
         with:
           command: test
           args: --workspace
+
+  test-consumer-image:
+    name: Build image for test consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CONSUMER_IMAGE: ghcr.io/getsentry/rust-arroyo-test
+    steps:
+      - uses: actions/checkout@v2
+        name: Checkout code
+
+      - name: Get branch name
+        id: branch
+        # strip `refs/heads/` from $GITHUB_REF and replace `/` with `-` so that
+        # it can be used as a docker tag
+        run: echo "::set-output name=branch::$(echo ${GITHUB_REF#refs/heads/} | tr / -)"
+
+      - name: Registry login
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
+      - name: Pull snuba CI images
+        run: |
+          docker pull ${CONSUMER_IMAGE}:${{ steps.branch.outputs.branch }} || \
+            docker pull ${CONSUMER_IMAGE}:latest || true
+      - name: Create Image
+        run: |
+          docker build \
+            -t ${CONSUMER_IMAGE}:latest \
+            -t ${CONSUMER_IMAGE}:${{ steps.branch.outputs.branch }} \
+            -t ${CONSUMER_IMAGE}:${{ github.sha }} \
+            .
+      - name: Publish
+        # Forks cannot push to the getsentry org
+        if: steps.branch.outputs.branch == 'main' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          # Useful to speed up PRs
+          docker push ${CONSUMER_IMAGE}:${{ steps.branch.outputs.branch }}
+          if [ "${{ steps.branch.outputs.branch }}" == 'main' ]; then
+            # Useful for regression testing on Sentry's checkout
+            docker push ${CONSUMER_IMAGE}:${{ github.sha }}
+            # The latest tag should only be published on `master`
+            docker push ${CONSUMER_IMAGE}:latest
+          fi
