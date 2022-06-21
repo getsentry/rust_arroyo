@@ -1,6 +1,8 @@
 use crate::types::{Message, Partition, Position};
 use std::collections::HashMap;
 
+pub mod transform;
+
 #[derive(Debug, Clone)]
 pub struct MessageRejected;
 
