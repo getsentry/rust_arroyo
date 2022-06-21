@@ -1,7 +1,8 @@
 extern crate rust_arroyo;
 
 use rust_arroyo::backends::kafka::config::KafkaConfig;
-use rust_arroyo::backends::kafka::{KafkaConsumer, KafkaPayload};
+use rust_arroyo::backends::kafka::types::KafkaPayload;
+use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::processing::strategies::{
     CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
 };
