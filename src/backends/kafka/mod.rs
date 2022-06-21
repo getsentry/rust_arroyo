@@ -322,6 +322,7 @@ mod tests {
     use rdkafka::client::DefaultClientContext;
     use rdkafka::config::ClientConfig;
     use std::collections::HashMap;
+    use std::thread::sleep;
     use std::time::Duration;
 
     struct EmptyCallbacks {}
@@ -410,6 +411,7 @@ mod tests {
     #[tokio::test]
     async fn test_commit() {
         create_topic("test", 1).await;
+        sleep(Duration::from_millis(100));
 
         let configuration = KafkaConfig::new_consumer_config(
             vec!["localhost:9092".to_string()],
