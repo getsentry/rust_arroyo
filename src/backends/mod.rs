@@ -13,6 +13,12 @@ pub enum ConsumerError {
     #[error("End of partition reached")]
     EndOfPartition,
 
+    #[error("Not subscribed to a topic")]
+    NotSubscribed,
+
+    #[error("The consumer errored")]
+    ConsumerErrored,
+
     #[error("The consumer is closed")]
     ConsumerClosed,
 
