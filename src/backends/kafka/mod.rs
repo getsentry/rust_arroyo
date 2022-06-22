@@ -442,6 +442,7 @@ mod tests {
         for _ in 0..10 {
             consumer.poll(Some(Duration::from_millis(5_000))).unwrap();
             if consumer.tell().unwrap().len() == 1 {
+                println!("Received assignment");
                 break;
             }
             sleep(Duration::from_millis(200));
