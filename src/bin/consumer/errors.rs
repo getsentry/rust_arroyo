@@ -6,7 +6,6 @@ use rust_arroyo::backends::kafka::producer::KafkaProducer;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
 use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::backends::AssignmentCallbacks;
-use rust_arroyo::processing::strategies::transform::Transform;
 use rust_arroyo::processing::strategies::ProcessingStrategyFactory;
 use rust_arroyo::processing::strategies::{CommitRequest, MessageRejected, ProcessingStrategy};
 use rust_arroyo::processing::StreamProcessor;
@@ -48,22 +47,15 @@ impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
     fn create(&self) -> Box<dyn ProcessingStrategy<KafkaPayload>> {
         let config = KafkaConfig::new_producer_config(vec!["localhost:9092".to_string()], None);
         let producer = KafkaProducer::new(config);
-        Box::new(Transform {
-            function: identity,
-            next_step: Box::new(Next {
-                destination: TopicOrPartition::Topic({
-                    Topic {
-                        name: "test-dest".to_string(),
-                    }
-                }),
-                producer,
+        Box::new(Next {
+            destination: TopicOrPartition::Topic({
+                Topic {
+                    name: "test-dest".to_string(),
+                }
             }),
+            producer,
         })
     }
-}
-
-fn identity(message: Message<KafkaPayload>) -> KafkaPayload {
-    message.payload
 }
 
 fn main() {
