@@ -138,7 +138,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
 
                 let msg = replace(&mut self.message, None);
                 if let Some(msg_s) = msg {
-                    let ret = strategy.submit(&msg_s);
+                    let ret = strategy.submit(msg_s);
                     match ret {
                         Ok(()) => {}
                         Err(_) => {
