@@ -5,7 +5,7 @@ use crate::types::Message;
 use std::time::Duration;
 
 pub struct Transform<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> {
-    pub function: fn(Message<TPayload>) -> Result<TTransformed, InvalidMessage>,
+    pub function: fn(&Message<TPayload>) -> Result<TTransformed, InvalidMessage>,
     pub next_step: Box<dyn ProcessingStrategy<TTransformed>>,
 }
 
@@ -16,12 +16,12 @@ impl<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> Processin
         self.next_step.poll()
     }
 
-    fn submit(&mut self, message: Message<TPayload>) -> Result<(), MessageRejected> {
+    fn submit(&mut self, message: &Message<TPayload>) -> Result<(), MessageRejected> {
         // TODO: Handle InvalidMessage
-        let transformed = (self.function)(message.clone()).unwrap();
+        let transformed = (self.function)(message).unwrap();
 
-        self.next_step.submit(Message {
-            partition: message.partition,
+        self.next_step.submit(&Message {
+            partition: message.partition.clone(),
             offset: message.offset,
             payload: transformed,
             timestamp: message.timestamp,

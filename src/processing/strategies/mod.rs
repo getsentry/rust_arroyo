@@ -46,7 +46,7 @@ pub trait ProcessingStrategy<TPayload: Clone>: Send + Sync {
     /// If the processing strategy is unable to accept a message (due to it
     /// being at or over capacity, for example), this method will raise a
     /// ``MessageRejected`` exception.
-    fn submit(&mut self, message: Message<TPayload>) -> Result<(), MessageRejected>;
+    fn submit(&mut self, message: &Message<TPayload>) -> Result<(), MessageRejected>;
 
     /// Close this instance. No more messages should be accepted by the
     /// instance after this method has been called.
