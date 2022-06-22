@@ -1,42 +1,61 @@
-use cadence::{BufferedUdpMetricSink, Counted, Gauged, QueuingMetricSink, StatsdClient, Timed};
+use cadence::{
+    BufferedUdpMetricSink, Counted, Gauged, MetricBuilder, QueuingMetricSink, StatsdClient, Timed,
+};
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
+use rand::Rng;
 use std::collections::HashMap;
 use std::net::{ToSocketAddrs, UdpSocket};
 use std::sync::Arc;
 
 pub trait Metrics {
-    fn counter(&self, key: &str, value: Option<i64>, tags: Option<HashMap<&str, &str>>);
+    fn counter(
+        &self,
+        key: &str,
+        value: Option<i64>,
+        tags: Option<HashMap<&str, &str>>,
+        sample_rate: Option<f64>,
+    );
 
-    fn gauge(&self, key: &str, value: u64, tags: Option<HashMap<&str, &str>>);
+    fn gauge(
+        &self,
+        key: &str,
+        value: u64,
+        tags: Option<HashMap<&str, &str>>,
+        sample_rate: Option<f64>,
+    );
 
-    fn time(&self, key: &str, value: u64, tags: Option<HashMap<&str, &str>>);
+    fn time(
+        &self,
+        key: &str,
+        value: u64,
+        tags: Option<HashMap<&str, &str>>,
+        sample_rate: Option<f64>,
+    );
 }
 
 pub struct MetricsClient {
-    pub statsd_client: StatsdClient,
+    statsd_client: StatsdClient,
     prefix: String,
 }
 
 impl Metrics for MetricsClient {
-    fn counter(&self, key: &str, value: Option<i64>, tags: Option<HashMap<&str, &str>>) {
-        let mut count_value: i64 = 1;
-        if let Some(value) = value {
-            count_value = value;
+    fn counter(
+        &self,
+        key: &str,
+        value: Option<i64>,
+        tags: Option<HashMap<&str, &str>>,
+        sample_rate: Option<f64>,
+    ) {
+        if self.should_sample(sample_rate) == false {
+            return;
         }
 
+        let count_value = value.unwrap_or(1);
+
         if let Some(tags) = tags {
-            let mut metric_builder = self.statsd_client.count_with_tags(key, count_value);
-            for (key, value) in tags {
-                metric_builder = metric_builder.with_tag(key, value);
-            }
-            let result = metric_builder.try_send();
-            match result {
-                Ok(_) => {}
-                Err(_err) => {
-                    println!("Failed to send metric {}: {}", key, _err)
-                }
-            }
+            let metric_builder = self.statsd_client.count_with_tags(key, count_value);
+            self.send_with_tags(metric_builder, tags);
         } else {
             let result = self.statsd_client.count(key, count_value);
             match result {
@@ -48,19 +67,20 @@ impl Metrics for MetricsClient {
         }
     }
 
-    fn gauge(&self, key: &str, value: u64, tags: Option<HashMap<&str, &str>>) {
+    fn gauge(
+        &self,
+        key: &str,
+        value: u64,
+        tags: Option<HashMap<&str, &str>>,
+        sample_rate: Option<f64>,
+    ) {
+        if self.should_sample(sample_rate) == false {
+            return;
+        }
+
         if let Some(tags) = tags {
-            let mut metric_builder = self.statsd_client.gauge_with_tags(key, value);
-            for (key, value) in tags {
-                metric_builder = metric_builder.with_tag(key, value);
-            }
-            let result = metric_builder.try_send();
-            match result {
-                Ok(_) => {}
-                Err(_err) => {
-                    println!("Failed to send metric {}: {}", key, _err)
-                }
-            }
+            let metric_builder = self.statsd_client.gauge_with_tags(key, value);
+            self.send_with_tags(metric_builder, tags);
         } else {
             let result = self.statsd_client.gauge(key, value);
             match result {
@@ -72,19 +92,20 @@ impl Metrics for MetricsClient {
         }
     }
 
-    fn time(&self, key: &str, value: u64, tags: Option<HashMap<&str, &str>>) {
+    fn time(
+        &self,
+        key: &str,
+        value: u64,
+        tags: Option<HashMap<&str, &str>>,
+        sample_rate: Option<f64>,
+    ) {
+        if self.should_sample(sample_rate) == false {
+            return;
+        }
+
         if let Some(tags) = tags {
-            let mut metric_builder = self.statsd_client.time_with_tags(key, value);
-            for (key, value) in tags {
-                metric_builder = metric_builder.with_tag(key, value);
-            }
-            let result = metric_builder.try_send();
-            match result {
-                Ok(_) => {}
-                Err(_err) => {
-                    println!("Failed to send metric {}: {}", key, _err)
-                }
-            }
+            let metric_builder = self.statsd_client.time_with_tags(key, value);
+            self.send_with_tags(metric_builder, tags);
         } else {
             let result = self.statsd_client.time(key, value);
             match result {
@@ -92,6 +113,33 @@ impl Metrics for MetricsClient {
                 Err(_err) => {
                     println!("Failed to send metric {}: {}", key, _err)
                 }
+            }
+        }
+    }
+}
+
+impl MetricsClient {
+    fn should_sample(&self, sample_rate: Option<f64>) -> bool {
+        return if rand::thread_rng().gen_range(0.0..=1.0) < sample_rate.unwrap_or(1.0) {
+            true
+        } else {
+            false
+        };
+    }
+
+    fn send_with_tags<'t, T: cadence::Metric + From<String>>(
+        &self,
+        mut metric_builder: MetricBuilder<'t, '_, T>,
+        tags: HashMap<&'t str, &'t str>,
+    ) {
+        for (key, value) in tags {
+            metric_builder = metric_builder.with_tag(key, value);
+        }
+        let result = metric_builder.try_send();
+        match result {
+            Ok(_) => {}
+            Err(_err) => {
+                println!("Failed to send metric with tags: {}", _err)
             }
         }
     }
@@ -122,46 +170,75 @@ pub fn init<A: ToSocketAddrs>(prefix: &str, host: A) {
 }
 
 // TODO: Remove cloning METRICS_CLIENT each time this is called using thread local storage.
-pub fn increment(key: &str, value: Option<i64>, tags: Option<HashMap<&str, &str>>) {
+pub fn increment(
+    key: &str,
+    value: Option<i64>,
+    tags: Option<HashMap<&str, &str>>,
+    sample_rate: Option<f64>,
+) {
     METRICS_CLIENT
         .read()
         .clone()
         .unwrap()
-        .counter(key, value, tags);
+        .counter(key, value, tags, sample_rate);
 }
 
 // TODO: Remove cloning METRICS_CLIENT each time this is called using thread local storage.
-pub fn gauge(key: &str, value: u64, tags: Option<HashMap<&str, &str>>) {
+pub fn gauge(key: &str, value: u64, tags: Option<HashMap<&str, &str>>, sample_rate: Option<f64>) {
     METRICS_CLIENT
         .read()
         .clone()
         .unwrap()
-        .gauge(key, value, tags);
+        .gauge(key, value, tags, sample_rate);
 }
 
 // TODO: Remove cloning METRICS_CLIENT each time this is called using thread local storage.
-pub fn time(key: &str, value: u64, tags: Option<HashMap<&str, &str>>) {
+pub fn time(key: &str, value: u64, tags: Option<HashMap<&str, &str>>, sample_rate: Option<f64>) {
     METRICS_CLIENT
         .read()
         .clone()
         .unwrap()
-        .time(key, value, tags);
+        .time(key, value, tags, sample_rate);
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::metrics::{gauge, increment, init, time};
+    use crate::utils::metrics::{gauge, increment, init, time, METRICS_CLIENT};
     use std::collections::HashMap;
 
     #[test]
     fn test_metrics() {
         init("my_host", "0.0.0.0:8125");
-        increment("a", Some(1), Some(HashMap::from([("tag1", "value1")])));
+
+        assert_eq!(
+            METRICS_CLIENT
+                .read()
+                .clone()
+                .unwrap()
+                .should_sample(Some(0.0)),
+            false
+        );
+        assert_eq!(
+            METRICS_CLIENT
+                .read()
+                .clone()
+                .unwrap()
+                .should_sample(Some(1.0)),
+            true
+        );
+
+        increment(
+            "a",
+            Some(1),
+            Some(HashMap::from([("tag1", "value1")])),
+            Some(1.0),
+        );
         gauge(
             "b",
             20,
             Some(HashMap::from([("tag2", "value2"), ("tag4", "value4")])),
+            None,
         );
-        time("c", 30, Some(HashMap::from([("tag3", "value3")])));
+        time("c", 30, Some(HashMap::from([("tag3", "value3")])), None);
     }
 }
