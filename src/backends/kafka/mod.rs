@@ -322,6 +322,7 @@ mod tests {
     use rdkafka::client::DefaultClientContext;
     use rdkafka::config::ClientConfig;
     use std::collections::HashMap;
+    use std::thread::sleep;
     use std::time::Duration;
 
     struct EmptyCallbacks {}
@@ -423,24 +424,30 @@ mod tests {
         let topic = Topic {
             name: "test".to_string(),
         };
+
+        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
+        consumer.subscribe(&[topic.clone()], my_callbacks).unwrap();
+
         let positions = HashMap::from([(
-            Partition {
-                topic: topic.clone(),
-                index: 0,
-            },
+            Partition { topic, index: 0 },
             Position {
                 offset: 100,
                 timestamp: Utc::now(),
             },
         )]);
 
-        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
-        consumer.subscribe(&[topic], my_callbacks).unwrap();
-
-        // Getting the assignment may take a while, wait up to 5 seconds
-        consumer.poll(Some(Duration::from_millis(5000))).unwrap();
-
         consumer.stage_positions(positions.clone()).unwrap();
+
+        // Wait until the consumer got an assignment
+        for _ in 0..10 {
+            consumer.poll(Some(Duration::from_millis(5_000))).unwrap();
+            if consumer.tell().unwrap().len() == 1 {
+                println!("Received assignment");
+                break;
+            }
+            sleep(Duration::from_millis(200));
+        }
+
         let res = consumer.commit_positions().unwrap();
         assert_eq!(res, positions);
         consumer.unsubscribe().unwrap();
