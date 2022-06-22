@@ -206,14 +206,11 @@ mod tests {
     fn test_metrics() {
         init("my_host", "0.0.0.0:8125");
 
-        assert_eq!(
-            METRICS_CLIENT
-                .read()
-                .clone()
-                .unwrap()
-                .should_sample(Some(0.0)),
-            false,
-        );
+        assert!(!METRICS_CLIENT
+            .read()
+            .clone()
+            .unwrap()
+            .should_sample(Some(0.0)),);
         assert!(METRICS_CLIENT
             .read()
             .clone()
