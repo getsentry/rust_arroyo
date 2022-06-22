@@ -106,9 +106,13 @@ async fn consume_and_produce(
         .set("message.timeout.ms", "5000")
         .create()
         .expect("couldn't create producer");
+    println!(
+        "Beginning poll {:?}",
+        vec![brokers, group_id, source_topic, dest_topic]
+    );
     loop {
         match consumer.recv().await {
-            Err(e) => warn!("Kafka error: {}", e),
+            Err(e) => panic!("Kafka error: {}", e),
             Ok(m) => {
                 let payload_str = match m.payload_view::<str>() {
                     None => "",
@@ -174,14 +178,14 @@ async fn main() {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("source_topic")
+            Arg::with_name("source-topic")
                 .long("source")
                 .help("source topic name")
                 .default_value("test_source")
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("dest_topic")
+            Arg::with_name("dest-topic")
                 .long("dest")
                 .help("destination topic name")
                 .default_value("test_dest")
@@ -199,10 +203,10 @@ async fn main() {
     let (version_n, version_s) = get_rdkafka_version();
     println!("rd_kafka_version: 0x{:08x}, {}", version_n, version_s);
 
-    let source_topic = matches.value_of("source_topic").unwrap();
+    let source_topic = matches.value_of("source-topic").unwrap();
     let brokers = matches.value_of("brokers").unwrap();
     let group_id = matches.value_of("group-id").unwrap();
-    let dest_topic = matches.value_of("dest_topic").unwrap();
+    let dest_topic = matches.value_of("dest-topic").unwrap();
     let batch_size = matches
         .value_of("batch_size")
         .unwrap()
