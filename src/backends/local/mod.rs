@@ -273,7 +273,7 @@ impl<'a, TPayload: Clone> Consumer<'a, TPayload> for LocalConsumer<'a, TPayload>
         Ok(positions)
     }
 
-    fn close(&mut self, _: Option<f64>) {
+    fn close(&mut self) {
         let partitions = self
             .broker
             .unsubscribe(self.id, self.group.clone())
