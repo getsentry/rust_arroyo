@@ -1,5 +1,6 @@
 use crate::types::{Message, Partition, Position};
 use std::collections::HashMap;
+use std::time::Duration;
 
 pub mod transform;
 
@@ -71,7 +72,7 @@ pub trait ProcessingStrategy<TPayload: Clone>: Send + Sync {
     /// until this function exits, allowing any work in progress to be
     /// completed and committed before the continuing the rebalancing
     /// process.
-    fn join(&mut self, timeout: Option<f64>) -> Option<CommitRequest>;
+    fn join(&mut self, timeout: Option<Duration>) -> Option<CommitRequest>;
 }
 
 pub trait ProcessingStrategyFactory<TPayload: Clone>: Send + Sync {

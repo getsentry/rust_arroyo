@@ -2,6 +2,7 @@ use crate::processing::strategies::{
     CommitRequest, InvalidMessage, MessageRejected, ProcessingStrategy,
 };
 use crate::types::Message;
+use std::time::Duration;
 
 pub struct Transform<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> {
     pub function: fn(Message<TPayload>) -> Result<TTransformed, InvalidMessage>,
@@ -12,7 +13,7 @@ impl<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> Processin
     for Transform<TPayload, TTransformed>
 {
     fn poll(&mut self) -> Option<CommitRequest> {
-        None
+        self.next_step.poll()
     }
 
     fn submit(&mut self, message: Message<TPayload>) -> Result<(), MessageRejected> {
@@ -27,11 +28,15 @@ impl<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> Processin
         })
     }
 
-    fn close(&mut self) {}
+    fn close(&mut self) {
+        self.next_step.close()
+    }
 
-    fn terminate(&mut self) {}
+    fn terminate(&mut self) {
+        self.next_step.terminate()
+    }
 
-    fn join(&mut self, _timeout: Option<f64>) -> Option<CommitRequest> {
-        None
+    fn join(&mut self, timeout: Option<Duration>) -> Option<CommitRequest> {
+        self.next_step.join(timeout)
     }
 }
