@@ -12,6 +12,7 @@ use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::Message;
 use rust_arroyo::types::{Partition, Topic, TopicOrPartition};
 use std::collections::HashMap;
+use std::time::Duration;
 
 struct EmptyCallbacks {}
 impl AssignmentCallbacks for EmptyCallbacks {
@@ -37,7 +38,7 @@ impl ProcessingStrategy<KafkaPayload> for Next {
 
     fn terminate(&mut self) {}
 
-    fn join(&mut self, _timeout: Option<f64>) -> Option<CommitRequest> {
+    fn join(&mut self, _timeout: Option<Duration>) -> Option<CommitRequest> {
         None
     }
 }
