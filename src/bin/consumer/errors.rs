@@ -83,12 +83,5 @@ fn main() {
 
     stream_processor.subscribe(topic);
 
-    println!("Subscribed");
-    for _ in 0..20 {
-        println!("Polling");
-        match stream_processor.run_once() {
-            Ok(msg) => println!("{:?}", msg),
-            Err(err) => println!("{:?}", err),
-        }
-    }
+    stream_processor.run().unwrap();
 }
