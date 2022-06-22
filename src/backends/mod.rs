@@ -1,4 +1,4 @@
-use super::types::{Message, Partition, Position, Topic};
+use super::types::{Message, Partition, Position, Topic, TopicOrPartition};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use thiserror::Error;
@@ -12,6 +12,12 @@ pub mod storages;
 pub enum ConsumerError {
     #[error("End of partition reached")]
     EndOfPartition,
+
+    #[error("Not subscribed to a topic")]
+    NotSubscribed,
+
+    #[error("The consumer errored")]
+    ConsumerErrored,
 
     #[error("The consumer is closed")]
     ConsumerClosed,
@@ -151,12 +157,7 @@ pub trait Consumer<'a, TPayload: Clone> {
 
 pub trait Producer<TPayload> {
     /// Produce to a topic or partition.
-    fn produce(
-        &self,
-        destination_topic: Option<Topic>,
-        destination_partition: Option<Partition>,
-        payload: TPayload,
-    );
+    fn produce(&self, destination: &TopicOrPartition, payload: &TPayload);
 
-    fn close(&self);
+    fn close(&mut self);
 }
