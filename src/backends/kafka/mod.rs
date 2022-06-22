@@ -322,6 +322,7 @@ mod tests {
     use rdkafka::client::DefaultClientContext;
     use rdkafka::config::ClientConfig;
     use std::collections::HashMap;
+    use std::thread::sleep;
     use std::time::Duration;
 
     struct EmptyCallbacks {}
@@ -438,11 +439,12 @@ mod tests {
         consumer.stage_positions(positions.clone()).unwrap();
 
         // Wait until the consumer got an assignment
-        for _ in 0..5 {
+        for _ in 0..10 {
             consumer.poll(Some(Duration::from_millis(5_000))).unwrap();
             if consumer.tell().unwrap().len() == 1 {
                 break;
             }
+            sleep(Duration::from_millis(200));
         }
 
         let res = consumer.commit_positions().unwrap();
