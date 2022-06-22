@@ -47,7 +47,7 @@ impl Metrics for MetricsClient {
         tags: Option<HashMap<&str, &str>>,
         sample_rate: Option<f64>,
     ) {
-        if self.should_sample(sample_rate) == false {
+        if !self.should_sample(sample_rate) {
             return;
         }
 
@@ -74,7 +74,7 @@ impl Metrics for MetricsClient {
         tags: Option<HashMap<&str, &str>>,
         sample_rate: Option<f64>,
     ) {
-        if self.should_sample(sample_rate) == false {
+        if !self.should_sample(sample_rate) {
             return;
         }
 
@@ -99,7 +99,7 @@ impl Metrics for MetricsClient {
         tags: Option<HashMap<&str, &str>>,
         sample_rate: Option<f64>,
     ) {
-        if self.should_sample(sample_rate) == false {
+        if !self.should_sample(sample_rate) {
             return;
         }
 
@@ -120,11 +120,7 @@ impl Metrics for MetricsClient {
 
 impl MetricsClient {
     fn should_sample(&self, sample_rate: Option<f64>) -> bool {
-        return if rand::thread_rng().gen_range(0.0..=1.0) < sample_rate.unwrap_or(1.0) {
-            true
-        } else {
-            false
-        };
+        rand::thread_rng().gen_range(0.0..=1.0) < sample_rate.unwrap_or(1.0)
     }
 
     fn send_with_tags<'t, T: cadence::Metric + From<String>>(
@@ -216,16 +212,13 @@ mod tests {
                 .clone()
                 .unwrap()
                 .should_sample(Some(0.0)),
-            false
+            false,
         );
-        assert_eq!(
-            METRICS_CLIENT
-                .read()
-                .clone()
-                .unwrap()
-                .should_sample(Some(1.0)),
-            true
-        );
+        assert!(METRICS_CLIENT
+            .read()
+            .clone()
+            .unwrap()
+            .should_sample(Some(1.0)),);
 
         increment(
             "a",
