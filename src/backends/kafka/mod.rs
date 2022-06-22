@@ -85,29 +85,6 @@ impl ClientContext for CustomContext {}
 impl ConsumerContext for CustomContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
         match rebalance {
-            Rebalance::Assign(list) => {
-                let mut map: HashMap<Partition, u64> = HashMap::new();
-                for partition in list.elements().iter() {
-                    let topic = partition.topic();
-                    let partition_number = partition.partition();
-                    let offset = partition.offset().to_raw().unwrap();
-                    map.insert(
-                        Partition {
-                            topic: Topic {
-                                name: topic.to_string(),
-                            },
-                            index: partition_number as u16,
-                        },
-                        offset as u64,
-                    );
-                }
-                let mut offsets = self.consumer_offsets.lock().unwrap();
-                for (partition, offset) in map.clone() {
-                    offsets.insert(partition, offset);
-                }
-
-                self.callbacks.lock().unwrap().on_assign(map);
-            }
             Rebalance::Revoke(list) => {
                 let mut partitions: Vec<Partition> = Vec::new();
                 for partition in list.elements().iter() {
@@ -132,7 +109,34 @@ impl ConsumerContext for CustomContext {
         }
     }
 
-    fn post_rebalance(&self, _: &Rebalance) {}
+    fn post_rebalance(&self, rebalance: &Rebalance) {
+        match rebalance {
+            Rebalance::Assign(list) => {
+                let mut map: HashMap<Partition, u64> = HashMap::new();
+                for partition in list.elements().iter() {
+                    let topic = partition.topic();
+                    let partition_number = partition.partition();
+                    let offset = partition.offset().to_raw().unwrap();
+                    map.insert(
+                        Partition {
+                            topic: Topic {
+                                name: topic.to_string(),
+                            },
+                            index: partition_number as u16,
+                        },
+                        offset as u64,
+                    );
+                }
+                let mut offsets = self.consumer_offsets.lock().unwrap();
+                for (partition, offset) in map.clone() {
+                    offsets.insert(partition, offset);
+                }
+                self.callbacks.lock().unwrap().on_assign(map);
+            }
+
+            _ => {}
+        }
+    }
 
     fn commit_callback(&self, _: KafkaResult<()>, _offsets: &TopicPartitionList) {
         println!("COMMIT");
