@@ -55,7 +55,7 @@ async fn flush_batch(
                     let offset_to_commit =
                         match positions.get_mut(&(source_topic.as_str(), *partition)) {
                             None => *position,
-                            Some(v) => max(v.clone(), *position),
+                            Some(v) => max(*v, *position),
                         };
                     match positions.insert((source_topic.as_str(), *partition), offset_to_commit) {
                         Some(_) => {}
@@ -90,7 +90,6 @@ async fn consume_and_produce(
         .set("bootstrap.servers", brokers)
         .set("enable.partition.eof", "false")
         .set("session.timeout.ms", "6000")
-        // TODO: disable auto commit
         .set("enable.auto.commit", "false")
         //.set("statistics.interval.ms", "30000")
         .set("auto.offset.reset", "smallest")
@@ -99,7 +98,7 @@ async fn consume_and_produce(
         .expect("Consumer creation failed");
 
     consumer
-        .subscribe(&vec![source_topic])
+        .subscribe(&[source_topic])
         .expect("Can't subscribe to specified topics");
 
     let producer: FutureProducer = ClientConfig::new()
