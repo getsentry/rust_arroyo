@@ -10,4 +10,4 @@ COPY . .
 RUN rustup toolchain install stable
 RUN make release
 
-CMD ["./target/release/errors-consumer"]
+ENTRYPOINT ["./target/release/errors-consumer"]
