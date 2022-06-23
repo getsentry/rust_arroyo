@@ -1,7 +1,6 @@
 extern crate rust_arroyo;
 
 use crate::rust_arroyo::backends::Producer;
-use chrono::Utc;
 use clap::{App, Arg};
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::producer::KafkaProducer;
@@ -36,7 +35,7 @@ impl ProcessingStrategy<KafkaPayload> for Next {
         let now = SystemTime::now();
         let diff = now.duration_since(self.last_commit).unwrap();
         if diff > COMMIT_INTERVAL && self.offsets.keys().len() > 0 {
-            let positions = mem::replace(&mut self.offsets, HashMap::new());
+            let positions = mem::take(&mut self.offsets);
 
             return Some(CommitRequest { positions });
         }
