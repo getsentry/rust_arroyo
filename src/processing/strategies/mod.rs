@@ -1,14 +1,17 @@
 use crate::types::{Message, Partition, Position};
 use std::collections::HashMap;
 use std::time::Duration;
+use thiserror::Error;
 
 pub mod transform;
 
-#[derive(Debug, Clone)]
-pub struct MessageRejected;
-
-#[derive(Debug, Clone)]
-pub struct InvalidMessage;
+#[derive(Error, Debug)]
+pub enum ProcessingError {
+    #[error("Retryable error")]
+    MessageRejected,
+    #[error("Invalid message")]
+    InvalidMessage,
+}
 
 /// Signals that we need to commit offsets
 #[derive(Clone)]
@@ -46,7 +49,7 @@ pub trait ProcessingStrategy<TPayload: Clone>: Send + Sync {
     /// If the processing strategy is unable to accept a message (due to it
     /// being at or over capacity, for example), this method will raise a
     /// ``MessageRejected`` exception.
-    fn submit(&mut self, message: Message<TPayload>) -> Result<(), MessageRejected>;
+    fn submit(&mut self, message: Message<TPayload>) -> Result<(), ProcessingError>;
 
     /// Close this instance. No more messages should be accepted by the
     /// instance after this method has been called.

@@ -208,7 +208,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
 #[cfg(test)]
 mod tests {
     use super::strategies::{
-        CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
+        CommitRequest, ProcessingError, ProcessingStrategy, ProcessingStrategyFactory,
     };
     use super::StreamProcessor;
     use crate::backends::local::broker::LocalBroker;
@@ -240,7 +240,7 @@ mod tests {
             }
         }
 
-        fn submit(&mut self, message: Message<String>) -> Result<(), MessageRejected> {
+        fn submit(&mut self, message: Message<String>) -> Result<(), ProcessingError> {
             self.message = Some(message);
             Ok(())
         }

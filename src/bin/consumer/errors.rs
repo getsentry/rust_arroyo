@@ -6,8 +6,9 @@ use rust_arroyo::backends::kafka::producer::KafkaProducer;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
 use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::backends::AssignmentCallbacks;
+use rust_arroyo::backends::ProducerError;
 use rust_arroyo::processing::strategies::ProcessingStrategyFactory;
-use rust_arroyo::processing::strategies::{CommitRequest, MessageRejected, ProcessingStrategy};
+use rust_arroyo::processing::strategies::{CommitRequest, ProcessingError, ProcessingStrategy};
 use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::Message;
 use rust_arroyo::types::{Partition, Topic, TopicOrPartition};
@@ -26,11 +27,24 @@ struct Next {
 }
 impl ProcessingStrategy<KafkaPayload> for Next {
     fn poll(&mut self) -> Option<CommitRequest> {
+        self.producer.poll();
         None
     }
 
-    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
-        self.producer.produce(&self.destination, &message.payload);
+    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), ProcessingError> {
+        let res = self.producer.produce(&self.destination, &message.payload);
+
+        // TODO: MessageRejeceted should be handled by the StreamProcessor but
+        // is not currently.
+        if let Err(err) = res {
+            match err {
+                ProducerError::QueueFull => {
+                    return Err(ProcessingError::MessageRejected);
+                }
+                _ => {}
+            }
+        }
+
         Ok(())
     }
 

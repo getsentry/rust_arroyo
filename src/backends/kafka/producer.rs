@@ -1,9 +1,11 @@
 use crate::backends::kafka::config::KafkaConfig;
 use crate::backends::kafka::types::KafkaPayload;
-use crate::backends::Producer;
+use crate::backends::Producer as ArroyoProducer;
+use crate::backends::ProducerError;
 use crate::types::TopicOrPartition;
 use rdkafka::config::ClientConfig;
-use rdkafka::producer::{BaseProducer, BaseRecord};
+use rdkafka::producer::{BaseProducer, BaseRecord, Producer};
+use std::time::Duration;
 
 pub struct KafkaProducer {
     producer: Option<BaseProducer>,
@@ -20,8 +22,14 @@ impl KafkaProducer {
     }
 }
 
-impl Producer<KafkaPayload> for KafkaProducer {
-    fn produce(&self, destination: &TopicOrPartition, payload: &KafkaPayload) {
+impl KafkaProducer {}
+
+impl ArroyoProducer<KafkaPayload> for KafkaProducer {
+    fn produce(
+        &self,
+        destination: &TopicOrPartition,
+        payload: &KafkaPayload,
+    ) -> Result<(), ProducerError> {
         let topic = match destination {
             TopicOrPartition::Topic(topic) => topic.name.as_ref(),
             TopicOrPartition::Partition(partition) => partition.topic.name.as_ref(),
@@ -45,8 +53,26 @@ impl Producer<KafkaPayload> for KafkaProducer {
 
         let producer = self.producer.as_ref().expect("Not closed");
 
-        producer.send(base_record).expect("Something went wrong");
+        let res = producer.send(base_record);
+
+        if let Err(err) = res {
+            let t = err.0;
+            return Err(t.into());
+        }
+
+        Ok(())
     }
+
+    fn poll(&self) {
+        let producer = self.producer.as_ref().unwrap();
+        producer.poll(Duration::ZERO);
+    }
+
+    fn flush(&self) {
+        let producer = self.producer.as_ref().unwrap();
+        producer.flush(Duration::from_millis(10_000));
+    }
+
     fn close(&mut self) {
         self.producer = None;
     }
@@ -75,7 +101,7 @@ mod tests {
             headers: None,
             payload: Some("asdf".as_bytes().to_vec()),
         };
-        producer.produce(&destination, &payload);
+        producer.produce(&destination, &payload).unwrap();
         producer.close();
     }
 }
