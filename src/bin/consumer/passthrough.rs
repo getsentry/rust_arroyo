@@ -1,6 +1,5 @@
 use clap::{App, Arg};
 use futures::future::{try_join_all, Future};
-use log::warn;
 use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
@@ -16,6 +15,8 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Duration;
+use std::time::SystemTime;
+use tokio::time::timeout;
 
 struct CustomContext;
 
@@ -42,37 +43,39 @@ type FutureBatch<T> = Vec<Pin<Box<T>>>;
 async fn flush_batch(
     consumer: &LoggingConsumer,
     batch: &mut FutureBatch<impl Future<Output = OwnedDeliveryResult>>,
-    batch_size: usize,
     source_topic: String,
 ) {
-    if batch.len() > batch_size {
-        let results = try_join_all(batch.iter_mut()).await;
-        match results {
-            Err(e) => panic!("{:?}", e),
-            Ok(result_vec) => {
-                let mut positions: HashMap<(&str, i32), i64> = HashMap::new();
-                for (partition, position) in result_vec.iter() {
-                    let offset_to_commit =
-                        match positions.get_mut(&(source_topic.as_str(), *partition)) {
-                            None => *position,
-                            Some(v) => max(*v, *position),
-                        };
-                    match positions.insert((source_topic.as_str(), *partition), offset_to_commit) {
-                        Some(_) => {}
-                        None => {}
-                    };
-                }
-
-                let topic_map = positions
-                    .iter()
-                    .map(|(k, v)| ((String::from(k.0), k.1), Offset::from_raw(*v)))
-                    .collect();
-                let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-                consumer.commit(&partition_list, CommitMode::Sync).unwrap();
-            }
-        }
-        batch.clear();
+    if batch.is_empty() {
+        println!("batch is empty, nothing to flush");
+        return;
     }
+    let results = try_join_all(batch.iter_mut()).await;
+    match results {
+        Err(e) => panic!("{:?}", e),
+        Ok(result_vec) => {
+            let mut positions: HashMap<(&str, i32), i64> = HashMap::new();
+            for (partition, position) in result_vec.iter() {
+                let offset_to_commit = match positions.get_mut(&(source_topic.as_str(), *partition))
+                {
+                    None => *position,
+                    Some(v) => max(*v, *position),
+                };
+                match positions.insert((source_topic.as_str(), *partition), offset_to_commit) {
+                    Some(_) => {}
+                    None => {}
+                };
+            }
+
+            let topic_map = positions
+                .iter()
+                .map(|(k, v)| ((String::from(k.0), k.1), Offset::from_raw(*v + 1)))
+                .collect();
+            let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
+            consumer.commit(&partition_list, CommitMode::Sync).unwrap();
+            println!("Committed: {:?}", topic_map);
+        }
+    }
+    batch.clear();
 }
 
 async fn consume_and_produce(
@@ -92,7 +95,7 @@ async fn consume_and_produce(
         .set("session.timeout.ms", "6000")
         .set("enable.auto.commit", "false")
         //.set("statistics.interval.ms", "30000")
-        .set("auto.offset.reset", "smallest")
+        .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Warning)
         .create_with_context(context)
         .expect("Consumer creation failed");
@@ -106,41 +109,48 @@ async fn consume_and_produce(
         .set("message.timeout.ms", "5000")
         .create()
         .expect("couldn't create producer");
+    println!(
+        "Beginning poll {:?}",
+        vec![brokers, group_id, source_topic, dest_topic]
+    );
+    let mut last_batch_flush = SystemTime::now();
     loop {
-        match consumer.recv().await {
-            Err(e) => warn!("Kafka error: {}", e),
-            Ok(m) => {
-                let payload_str = match m.payload_view::<str>() {
-                    None => "",
-                    Some(Ok(s)) => s,
-                    Some(Err(e)) => {
-                        warn!("Error while deserializing message payload: {:?}", e);
-                        ""
-                    }
-                };
-                println!("key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
-                          m.key(), payload_str, m.topic(), m.partition(), m.offset(), m.timestamp());
-                let payload_clone = m.detach();
-                // this is only a pointer clone, it doesn't clone tha underlying producer
-                let tmp_producer = producer.clone();
+        match timeout(Duration::from_secs(2), consumer.recv()).await {
+            Ok(result) => {
+                match result {
+                    Err(e) => panic!("Kafka error: {}", e),
+                    Ok(m) => {
+                        let payload_clone = m.detach();
+                        // this is only a pointer clone, it doesn't clone tha underlying producer
+                        let tmp_producer = producer.clone();
 
-                batch.push(Box::pin(async move {
-                    return tmp_producer
-                        .send(
-                            FutureRecord::to(dest_topic)
-                                .payload(payload_clone.payload().unwrap())
-                                .key("None"),
-                            Duration::from_secs(0),
-                        )
-                        .await;
-                }));
-                flush_batch(
-                    &consumer,
-                    &mut batch,
-                    batch_size,
-                    String::from(source_topic),
-                )
-                .await;
+                        batch.push(Box::pin(async move {
+                            return tmp_producer
+                                .send(
+                                    FutureRecord::to(dest_topic)
+                                        .payload(payload_clone.payload().unwrap())
+                                        .key("None"),
+                                    Duration::from_secs(0),
+                                )
+                                .await;
+                        }));
+                        if batch.len() > batch_size
+                            || SystemTime::now()
+                                .duration_since(last_batch_flush)
+                                .unwrap()
+                                .as_secs()
+                                // TODO: make batch flush time an arg
+                                > 1
+                        {
+                            flush_batch(&consumer, &mut batch, String::from(source_topic)).await;
+                            last_batch_flush = SystemTime::now();
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                println!("timeoout, flushing batch");
+                flush_batch(&consumer, &mut batch, String::from(source_topic)).await;
             }
         }
     }
@@ -174,14 +184,14 @@ async fn main() {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("source_topic")
+            Arg::with_name("source-topic")
                 .long("source")
                 .help("source topic name")
                 .default_value("test_source")
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("dest_topic")
+            Arg::with_name("dest-topic")
                 .long("dest")
                 .help("destination topic name")
                 .default_value("test_dest")
@@ -199,10 +209,10 @@ async fn main() {
     let (version_n, version_s) = get_rdkafka_version();
     println!("rd_kafka_version: 0x{:08x}, {}", version_n, version_s);
 
-    let source_topic = matches.value_of("source_topic").unwrap();
+    let source_topic = matches.value_of("source-topic").unwrap();
     let brokers = matches.value_of("brokers").unwrap();
     let group_id = matches.value_of("group-id").unwrap();
-    let dest_topic = matches.value_of("dest_topic").unwrap();
+    let dest_topic = matches.value_of("dest-topic").unwrap();
     let batch_size = matches
         .value_of("batch_size")
         .unwrap()
