@@ -9,6 +9,7 @@ use rust_arroyo::processing::strategies::{
 use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::{Message, Partition, Position, Topic};
 use std::collections::HashMap;
+use std::time::Duration;
 
 struct TestStrategy {
     partitions: HashMap<Partition, Position>,
@@ -45,7 +46,7 @@ impl ProcessingStrategy<KafkaPayload> for TestStrategy {
 
     fn terminate(&mut self) {}
 
-    fn join(&mut self, _: Option<f64>) -> Option<CommitRequest> {
+    fn join(&mut self, _: Option<Duration>) -> Option<CommitRequest> {
         None
     }
 }
