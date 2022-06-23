@@ -2,6 +2,7 @@ extern crate rust_arroyo;
 
 use crate::rust_arroyo::backends::Producer;
 use clap::{App, Arg};
+use log::debug;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::producer::KafkaProducer;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
@@ -32,6 +33,7 @@ impl ProcessingStrategy<KafkaPayload> for Next {
 
     fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
         self.producer.produce(&self.destination, &message.payload);
+        debug!("Produced message offset {}", message.offset);
         Ok(())
     }
 
@@ -130,7 +132,7 @@ fn main() {
     .unwrap()
     .parse::<usize>()
     .unwrap();*/
-
+    env_logger::init();
     let config = KafkaConfig::new_consumer_config(
         vec![brokers.to_string()],
         group_id.to_string(),
