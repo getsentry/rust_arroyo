@@ -29,34 +29,30 @@ struct Next {
     destination: TopicOrPartition,
     producer: KafkaProducer,
     last_commit: SystemTime,
-    offsets: HashMap<Partition, u64>,
+    offsets: HashMap<Partition, Position>,
 }
 impl ProcessingStrategy<KafkaPayload> for Next {
     fn poll(&mut self) -> Option<CommitRequest> {
         let now = SystemTime::now();
         let diff = now.duration_since(self.last_commit).unwrap();
         if diff > COMMIT_INTERVAL && self.offsets.keys().len() > 0 {
-            let prev_offsets = mem::replace(&mut self.offsets, HashMap::new());
-            let mut positions_to_commit: HashMap<Partition, Position> = HashMap::new();
-            for (partition, offset) in prev_offsets {
-                positions_to_commit.insert(
-                    partition,
-                    Position {
-                        offset,
-                        timestamp: Utc::now(),
-                    },
-                );
-            }
+            let positions = mem::replace(&mut self.offsets, HashMap::new());
 
-            return Some(CommitRequest {
-                positions: positions_to_commit,
-            });
+            return Some(CommitRequest { positions });
         }
 
         None
     }
 
     fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), ProcessingError> {
+        self.offsets.insert(
+            message.partition,
+            Position {
+                offset: message.offset,
+                timestamp: message.timestamp,
+            },
+        );
+
         let res = self.producer.produce(&self.destination, &message.payload);
 
         // TODO: MessageRejected should be handled by the StreamProcessor but
