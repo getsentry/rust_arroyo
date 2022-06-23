@@ -4,17 +4,17 @@ use crate::backends::Producer as ArroyoProducer;
 use crate::backends::ProducerError;
 use crate::types::TopicOrPartition;
 use rdkafka::config::ClientConfig;
-use rdkafka::producer::{BaseProducer, BaseRecord, Producer};
+use rdkafka::producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer};
 use std::time::Duration;
 
 pub struct KafkaProducer {
-    producer: Option<BaseProducer>,
+    producer: Option<ThreadedProducer<DefaultProducerContext>>,
 }
 
 impl KafkaProducer {
     pub fn new(config: KafkaConfig) -> Self {
         let config_obj: ClientConfig = config.into();
-        let base_producer: BaseProducer<_> = config_obj.create().unwrap();
+        let base_producer: ThreadedProducer<_> = config_obj.create().unwrap();
 
         Self {
             producer: Some(base_producer),
@@ -61,11 +61,6 @@ impl ArroyoProducer<KafkaPayload> for KafkaProducer {
         }
 
         Ok(())
-    }
-
-    fn poll(&self) {
-        let producer = self.producer.as_ref().unwrap();
-        producer.poll(Duration::ZERO);
     }
 
     fn flush(&self) {

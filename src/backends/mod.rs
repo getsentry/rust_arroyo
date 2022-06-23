@@ -173,8 +173,6 @@ pub trait Producer<TPayload> {
         payload: &TPayload,
     ) -> Result<(), ProducerError>;
 
-    fn poll(&self);
-
     fn flush(&self);
 
     fn close(&mut self);
