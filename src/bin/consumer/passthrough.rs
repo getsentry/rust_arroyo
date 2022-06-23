@@ -114,16 +114,6 @@ async fn consume_and_produce(
         match consumer.recv().await {
             Err(e) => panic!("Kafka error: {}", e),
             Ok(m) => {
-                let payload_str = match m.payload_view::<str>() {
-                    None => "",
-                    Some(Ok(s)) => s,
-                    Some(Err(e)) => {
-                        warn!("Error while deserializing message payload: {:?}", e);
-                        ""
-                    }
-                };
-                println!("key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
-                          m.key(), payload_str, m.topic(), m.partition(), m.offset(), m.timestamp());
                 let payload_clone = m.detach();
                 // this is only a pointer clone, it doesn't clone tha underlying producer
                 let tmp_producer = producer.clone();
