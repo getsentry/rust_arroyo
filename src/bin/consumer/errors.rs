@@ -32,6 +32,7 @@ impl ProcessingStrategy<KafkaPayload> for Next {
     }
 
     fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), ProcessingError> {
+        println!("payload: {:?}", message.payload.payload);
         let res = self.producer.produce(&self.destination, &message.payload);
 
         // TODO: MessageRejected should be handled by the StreamProcessor but
@@ -132,12 +133,8 @@ fn main() {
     let brokers = matches.value_of("brokers").unwrap();
     let group_id = matches.value_of("group-id").unwrap();
     let dest_topic = matches.value_of("dest-topic").unwrap();
-    // TODO: implement this
-    /* let _batch_size = matches
-    .value_of("batch_size")
-    .unwrap()
-    .parse::<usize>()
-    .unwrap();*/
+
+    println!("Starting consumer {}", source_topic);
 
     let config = KafkaConfig::new_consumer_config(
         vec![brokers.to_string()],
