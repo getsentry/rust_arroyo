@@ -2,7 +2,7 @@ use crate::types::{Message, Partition, Position};
 use std::collections::HashMap;
 use std::time::Duration;
 
-mod noop;
+pub mod noop;
 pub mod transform;
 
 #[derive(Debug, Clone)]

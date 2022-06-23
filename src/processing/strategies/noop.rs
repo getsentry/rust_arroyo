@@ -4,10 +4,10 @@ use crate::types::{Message, Partition, Position};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
-struct NoopCommit {
+pub struct NoopCommit {
     partitions: HashMap<Partition, Position>,
     last_commit_time: SystemTime,
-    periodic_commit: Duration,
+    commit_frequency: Duration,
 }
 impl ProcessingStrategy<KafkaPayload> for NoopCommit {
     fn poll(&mut self) -> Option<CommitRequest> {
@@ -39,7 +39,7 @@ impl NoopCommit {
         if SystemTime::now()
             > self
                 .last_commit_time
-                .checked_add(self.periodic_commit)
+                .checked_add(self.commit_frequency)
                 .unwrap()
             || force
         {
@@ -59,14 +59,20 @@ impl NoopCommit {
     }
 }
 
+pub fn new(commit_frequency: Duration) -> NoopCommit {
+    NoopCommit {
+        partitions: Default::default(),
+        last_commit_time: SystemTime::now(),
+        commit_frequency,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::backends::kafka::types::KafkaPayload;
-    use crate::processing::strategies::noop::NoopCommit;
-    use crate::processing::strategies::{CommitRequest, ProcessingStrategy};
+    use crate::processing::strategies::{noop, CommitRequest, ProcessingStrategy};
     use crate::types::{Message, Partition, Position, Topic};
     use chrono::DateTime;
-    use std::collections::HashMap;
     use std::thread::sleep;
     use std::time::{Duration, SystemTime};
 
@@ -106,11 +112,7 @@ mod tests {
             timestamp,
         };
 
-        let mut noop = NoopCommit {
-            partitions: HashMap::new(),
-            last_commit_time: SystemTime::now(),
-            periodic_commit: Duration::from_secs(1),
-        };
+        let mut noop = noop::new(Duration::from_secs(1));
 
         let mut commit_req1 = CommitRequest {
             positions: Default::default(),
