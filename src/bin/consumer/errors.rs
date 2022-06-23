@@ -32,17 +32,13 @@ impl ProcessingStrategy<KafkaPayload> for Next {
         None
     }
 
-    // TODO: Figure out how to fix the clippy error
-    #[allow(clippy::all)]
     fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), ProcessingError> {
         let res = self.producer.produce(&self.destination, &message.payload);
 
         // TODO: MessageRejected should be handled by the StreamProcessor but
         // is not currently.
-        if let Err(err) = res {
-            if let ProducerError::QueueFull = err {
-                return Err(ProcessingError::MessageRejected);
-            }
+        if let Err(ProducerError::QueueFull) = res {
+            return Err(ProcessingError::MessageRejected);
         }
 
         Ok(())
