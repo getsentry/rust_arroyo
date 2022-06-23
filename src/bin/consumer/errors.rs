@@ -14,9 +14,7 @@ use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::Message;
 use rust_arroyo::types::{Partition, Topic, TopicOrPartition};
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime};
-
-const POLL_INTERVAL: Duration = Duration::from_millis(100);
+use std::time::Duration;
 
 struct EmptyCallbacks {}
 impl AssignmentCallbacks for EmptyCallbacks {
@@ -27,16 +25,9 @@ impl AssignmentCallbacks for EmptyCallbacks {
 struct Next {
     destination: TopicOrPartition,
     producer: KafkaProducer,
-    last_poll: SystemTime,
 }
 impl ProcessingStrategy<KafkaPayload> for Next {
     fn poll(&mut self) -> Option<CommitRequest> {
-        let now = SystemTime::now();
-        let diff = now.duration_since(self.last_poll).unwrap();
-        if diff > POLL_INTERVAL {
-            self.producer.poll();
-            self.last_poll = now;
-        }
         None
     }
 
@@ -76,7 +67,6 @@ impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
                 }
             }),
             producer,
-            last_poll: SystemTime::now(),
         })
     }
 }
