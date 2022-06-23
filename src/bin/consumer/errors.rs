@@ -1,6 +1,7 @@
 extern crate rust_arroyo;
 
 use crate::rust_arroyo::backends::Producer;
+use chrono::Utc;
 use clap::{App, Arg};
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::producer::KafkaProducer;
@@ -11,10 +12,12 @@ use rust_arroyo::backends::ProducerError;
 use rust_arroyo::processing::strategies::ProcessingStrategyFactory;
 use rust_arroyo::processing::strategies::{CommitRequest, ProcessingError, ProcessingStrategy};
 use rust_arroyo::processing::StreamProcessor;
-use rust_arroyo::types::Message;
-use rust_arroyo::types::{Partition, Topic, TopicOrPartition};
+use rust_arroyo::types::{Message, Partition, Position, Topic, TopicOrPartition};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::mem;
+use std::time::{Duration, SystemTime};
+
+const COMMIT_INTERVAL: Duration = Duration::from_millis(500);
 
 struct EmptyCallbacks {}
 impl AssignmentCallbacks for EmptyCallbacks {
@@ -25,14 +28,35 @@ impl AssignmentCallbacks for EmptyCallbacks {
 struct Next {
     destination: TopicOrPartition,
     producer: KafkaProducer,
+    last_commit: SystemTime,
+    offsets: HashMap<Partition, u64>,
 }
 impl ProcessingStrategy<KafkaPayload> for Next {
     fn poll(&mut self) -> Option<CommitRequest> {
+        let now = SystemTime::now();
+        let diff = now.duration_since(self.last_commit).unwrap();
+        if diff > COMMIT_INTERVAL && self.offsets.keys().len() > 0 {
+            let prev_offsets = mem::replace(&mut self.offsets, HashMap::new());
+            let mut positions_to_commit: HashMap<Partition, Position> = HashMap::new();
+            for (partition, offset) in prev_offsets {
+                positions_to_commit.insert(
+                    partition,
+                    Position {
+                        offset,
+                        timestamp: Utc::now(),
+                    },
+                );
+            }
+
+            return Some(CommitRequest {
+                positions: positions_to_commit,
+            });
+        }
+
         None
     }
 
     fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), ProcessingError> {
-        println!("payload: {:?}", message.payload.payload);
         let res = self.producer.produce(&self.destination, &message.payload);
 
         // TODO: MessageRejected should be handled by the StreamProcessor but
@@ -68,6 +92,8 @@ impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
                 }
             }),
             producer,
+            last_commit: SystemTime::now(),
+            offsets: HashMap::new(),
         })
     }
 }
