@@ -46,6 +46,7 @@ async fn flush_batch(
     source_topic: String,
 ) {
     if batch.is_empty() {
+        println!("batch is empty, nothing to flush");
         return;
     }
     let results = try_join_all(batch.iter_mut()).await;
@@ -67,7 +68,7 @@ async fn flush_batch(
 
             let topic_map = positions
                 .iter()
-                .map(|(k, v)| ((String::from(k.0), k.1), Offset::from_raw(*v)))
+                .map(|(k, v)| ((String::from(k.0), k.1), Offset::from_raw(*v + 1)))
                 .collect();
             let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
             consumer.commit(&partition_list, CommitMode::Sync).unwrap();
