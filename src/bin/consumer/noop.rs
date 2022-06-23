@@ -1,5 +1,6 @@
 extern crate rust_arroyo;
 
+use clap::{App, Arg};
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
 use rust_arroyo::backends::kafka::KafkaConsumer;
@@ -17,29 +18,88 @@ impl AssignmentCallbacks for EmptyCallbacks {
     fn on_revoke(&mut self, _: Vec<Partition>) {}
 }
 
-struct StrategyFactory {}
+struct StrategyFactory {
+    batch_time: u64,
+}
 impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
     fn create(&self) -> Box<dyn ProcessingStrategy<KafkaPayload>> {
-        Box::new(noop::new(Duration::from_secs(1)))
+        Box::new(noop::new(Duration::from_millis(self.batch_time)))
     }
 }
 
 fn main() {
+    let matches = App::new("noop consumer")
+        .version(option_env!("CARGO_PKG_VERSION").unwrap_or(""))
+        .about("Simple noop consumer")
+        .arg(
+            Arg::with_name("brokers")
+                .short("b")
+                .long("brokers")
+                .help("Broker list in kafka format")
+                .takes_value(true)
+                .default_value("localhost:9092"),
+        )
+        .arg(
+            Arg::with_name("group-id")
+                .short("g")
+                .long("group-id")
+                .help("Consumer group id")
+                .takes_value(true)
+                .default_value("example_consumer_group_id"),
+        )
+        .arg(
+            Arg::with_name("log-conf")
+                .long("log-conf")
+                .help("Configure the logging format (example: 'rdkafka=trace')")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("source-topic")
+                .long("source")
+                .help("source topic name")
+                .default_value("test_source")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("batch-time")
+                .long("batch_time")
+                .help("time of the batch for flushing")
+                .default_value("100")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("offset-reset")
+                .long("offset-reset")
+                .help("kafka auto.offset.reset param")
+                .default_value("earliest")
+                .takes_value(true),
+        )
+        .get_matches();
+
+    let source_topic = matches.value_of("source-topic").unwrap();
+    let offset_reset = matches.value_of("offset-reset").unwrap();
+    let brokers = matches.value_of("brokers").unwrap();
+    let group_id = matches.value_of("group-id").unwrap();
+    let batch_time = matches
+        .value_of("batch_time")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+
     let config = KafkaConfig::new_consumer_config(
-        vec!["localhost:9092".to_string()],
-        "my_group".to_string(),
-        "earliest".to_string(),
+        vec![brokers.to_string()],
+        group_id.to_string(),
+        offset_reset.to_string(),
         false,
         None,
     );
     let consumer = KafkaConsumer::new(config);
     let topic = Topic {
-        name: "test-static".to_string(),
+        name: source_topic.to_string(),
     };
     let mut stream_processor =
-        StreamProcessor::new(Box::new(consumer), Box::new(StrategyFactory {}));
+        StreamProcessor::new(Box::new(consumer), Box::new(StrategyFactory { batch_time }));
 
     stream_processor.subscribe(topic);
-
     stream_processor.run().unwrap();
 }
