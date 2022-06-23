@@ -217,6 +217,7 @@ mod tests {
     use crate::types::{Message, Partition, Position, Topic};
     use crate::utils::clock::SystemClock;
     use std::collections::HashMap;
+    use std::time::Duration;
     use uuid::Uuid;
 
     struct TestStrategy {
@@ -248,7 +249,7 @@ mod tests {
 
         fn terminate(&mut self) {}
 
-        fn join(&mut self, _: Option<f64>) -> Option<CommitRequest> {
+        fn join(&mut self, _: Option<Duration>) -> Option<CommitRequest> {
             None
         }
     }
