@@ -10,5 +10,5 @@ RUN rustup toolchain install stable
 RUN make release
 
 
-ENTRYPOINT ["./target/release/passthrough-consumer"]
+ENTRYPOINT ["./target/release/errors-consumer"]
 
