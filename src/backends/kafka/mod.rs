@@ -84,57 +84,50 @@ impl ClientContext for CustomContext {}
 
 impl ConsumerContext for CustomContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
-        match rebalance {
-            Rebalance::Revoke(list) => {
-                let mut partitions: Vec<Partition> = Vec::new();
-                for partition in list.elements().iter() {
-                    let topic = partition.topic();
-                    let partition_number = partition.partition();
-                    partitions.push(Partition {
-                        topic: Topic {
-                            name: topic.to_string(),
-                        },
-                        index: partition_number as u16,
-                    });
-                }
-
-                let mut offsets = self.consumer_offsets.lock().unwrap();
-                for partition in partitions.iter() {
-                    offsets.remove(partition);
-                }
-
-                self.callbacks.lock().unwrap().on_revoke(partitions);
+        if let Rebalance::Revoke(list) = rebalance {
+            let mut partitions: Vec<Partition> = Vec::new();
+            for partition in list.elements().iter() {
+                let topic = partition.topic();
+                let partition_number = partition.partition();
+                partitions.push(Partition {
+                    topic: Topic {
+                        name: topic.to_string(),
+                    },
+                    index: partition_number as u16,
+                });
             }
-            _ => {}
+
+            let mut offsets = self.consumer_offsets.lock().unwrap();
+            for partition in partitions.iter() {
+                offsets.remove(partition);
+            }
+
+            self.callbacks.lock().unwrap().on_revoke(partitions);
         }
     }
 
     fn post_rebalance(&self, rebalance: &Rebalance) {
-        match rebalance {
-            Rebalance::Assign(list) => {
-                let mut map: HashMap<Partition, u64> = HashMap::new();
-                for partition in list.elements().iter() {
-                    let topic = partition.topic();
-                    let partition_number = partition.partition();
-                    let offset = partition.offset().to_raw().unwrap();
-                    map.insert(
-                        Partition {
-                            topic: Topic {
-                                name: topic.to_string(),
-                            },
-                            index: partition_number as u16,
+        if let Rebalance::Assign(list) = rebalance {
+            let mut map: HashMap<Partition, u64> = HashMap::new();
+            for partition in list.elements().iter() {
+                let topic = partition.topic();
+                let partition_number = partition.partition();
+                let offset = partition.offset().to_raw().unwrap();
+                map.insert(
+                    Partition {
+                        topic: Topic {
+                            name: topic.to_string(),
                         },
-                        offset as u64,
-                    );
-                }
-                let mut offsets = self.consumer_offsets.lock().unwrap();
-                for (partition, offset) in map.clone() {
-                    offsets.insert(partition, offset);
-                }
-                self.callbacks.lock().unwrap().on_assign(map);
+                        index: partition_number as u16,
+                    },
+                    offset as u64,
+                );
             }
-
-            _ => {}
+            let mut offsets = self.consumer_offsets.lock().unwrap();
+            for (partition, offset) in map.clone() {
+                offsets.insert(partition, offset);
+            }
+            self.callbacks.lock().unwrap().on_assign(map);
         }
     }
 
