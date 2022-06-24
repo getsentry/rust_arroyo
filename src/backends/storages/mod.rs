@@ -1,5 +1,6 @@
 pub mod memory;
 use super::super::types::{Message, Partition, Topic};
+use crate::backends::Payload;
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
@@ -21,7 +22,7 @@ pub enum ConsumeError {
     OffsetOutOfRange,
 }
 
-pub trait MessageStorage<TPayload: Clone> {
+pub trait MessageStorage {
     // Create a topic with the given number of partitions.
     //
     // If the topic already exists, a ``TopicExists`` exception will be
@@ -60,7 +61,7 @@ pub trait MessageStorage<TPayload: Clone> {
         &self,
         partition: &Partition,
         offset: u64,
-    ) -> Result<Option<Message<TPayload>>, ConsumeError>;
+    ) -> Result<Option<Message<Payload>>, ConsumeError>;
 
     // Produce a single message to the provided partition.
     //
@@ -70,7 +71,7 @@ pub trait MessageStorage<TPayload: Clone> {
     fn produce(
         &mut self,
         partition: &Partition,
-        payload: TPayload,
+        payload: Payload,
         timestamp: DateTime<Utc>,
     ) -> Result<u64, ConsumeError>;
 }

@@ -67,16 +67,16 @@ impl Callbacks {
 /// instance and a ``ProcessingStrategy``, ensuring that processing
 /// strategies are instantiated on partition assignment and closed on
 /// partition revocation.
-pub struct StreamProcessor<'a> {
-    consumer: Box<dyn Consumer + 'a>,
+pub struct StreamProcessor {
+    consumer: Box<dyn Consumer>,
     strategies: Arc<Mutex<Strategies>>,
-    message: Option<Message<Payload<'a>>>,
+    message: Option<Message<Payload<'static>>>,
     shutdown_requested: bool,
 }
 
-impl<'a> StreamProcessor<'a> {
+impl StreamProcessor {
     pub fn new(
-        consumer: Box<dyn Consumer + 'a>,
+        consumer: Box<dyn Consumer>,
         processing_factory: Box<dyn ProcessingStrategyFactory>,
     ) -> Self {
         let strategies = Arc::new(Mutex::new(Strategies {
@@ -115,7 +115,7 @@ impl<'a> StreamProcessor<'a> {
             let msg = self.consumer.poll(Some(Duration::from_secs(1)));
             //TODO: Support errors properly
             match msg {
-                Ok(m) => self.message = m,
+                Ok(m) => self.message = m.map(|x| x.to_owned()),
                 Err(_) => return Err(RunError::PollError),
             }
         }

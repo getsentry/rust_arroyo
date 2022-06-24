@@ -45,10 +45,10 @@ struct SubscriptionState {
     last_eof_at: HashMap<Partition, u64>,
 }
 
-pub struct LocalConsumer<'a> {
+pub struct LocalConsumer {
     id: Uuid,
     group: String,
-    broker: LocalBroker<Payload<'a>>,
+    broker: LocalBroker,
     pending_callback: VecDeque<Callback>,
     paused: HashSet<Partition>,
     // The offset that a the last ``EndOfPartition`` exception that was
@@ -61,10 +61,10 @@ pub struct LocalConsumer<'a> {
     closed: bool,
 }
 
-impl<'a> LocalConsumer<'a> {
+impl LocalConsumer {
     pub fn new(
         id: Uuid,
-        broker: LocalBroker<Payload<'a>>,
+        broker: LocalBroker,
         group: String,
         enable_end_of_partition: bool,
     ) -> Self {
@@ -89,7 +89,7 @@ impl<'a> LocalConsumer<'a> {
     }
 }
 
-impl<'a> Consumer for LocalConsumer<'a> {
+impl Consumer for LocalConsumer {
     fn subscribe(
         &mut self,
         topics: &[Topic],
@@ -330,8 +330,8 @@ mod tests {
         fn on_revoke(&mut self, _: Vec<Partition>) {}
     }
 
-    fn build_broker() -> LocalBroker<String> {
-        let storage: MemoryMessageStorage<String> = Default::default();
+    fn build_broker() -> LocalBroker {
+        let storage: MemoryMessageStorage = Default::default();
         let clock = SystemClock {};
         let mut broker = LocalBroker::new(Box::new(storage), Box::new(clock));
 

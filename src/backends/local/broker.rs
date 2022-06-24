@@ -1,20 +1,21 @@
 use super::SubscriptionError;
 use crate::backends::storages::{ConsumeError, MessageStorage, TopicDoesNotExist, TopicExists};
+use crate::backends::Payload;
 use crate::types::{Message, Partition, Topic};
 use crate::utils::clock::Clock;
 use chrono::DateTime;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-pub struct LocalBroker<TPayload: Clone> {
-    storage: Box<dyn MessageStorage<TPayload>>,
+pub struct LocalBroker {
+    storage: Box<dyn MessageStorage>,
     clock: Box<dyn Clock>,
     offsets: HashMap<String, HashMap<Partition, u64>>,
     subscriptions: HashMap<String, HashMap<Uuid, Vec<Topic>>>,
 }
 
-impl<TPayload: Clone> LocalBroker<TPayload> {
-    pub fn new(storage: Box<dyn MessageStorage<TPayload>>, clock: Box<dyn Clock>) -> Self {
+impl LocalBroker {
+    pub fn new(storage: Box<dyn MessageStorage>, clock: Box<dyn Clock>) -> Self {
         Self {
             storage,
             clock,
@@ -34,7 +35,7 @@ impl<TPayload: Clone> LocalBroker<TPayload> {
     pub fn produce(
         &mut self,
         partition: &Partition,
-        payload: TPayload,
+        payload: Payload,
     ) -> Result<u64, ConsumeError> {
         let time = self.clock.time();
         self.storage
@@ -126,7 +127,7 @@ impl<TPayload: Clone> LocalBroker<TPayload> {
         &self,
         partition: &Partition,
         offset: u64,
-    ) -> Result<Option<Message<TPayload>>, ConsumeError> {
+    ) -> Result<Option<Message<Payload>>, ConsumeError> {
         self.storage.consume(partition, offset)
     }
 

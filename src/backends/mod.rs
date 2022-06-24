@@ -36,10 +36,18 @@ pub enum ConsumeError {
     ConsumerError,
 }
 
-#[derive(Clone)]
 pub enum Payload<'a> {
     Kafka(kafka::KafkaPayload<'a>),
     Local(Vec<u8>),
+}
+
+impl<'a> Payload<'a> {
+    pub fn to_owned(&self) -> Payload<'static> {
+        match self {
+            Payload::Kafka(payload) => Payload::Kafka(payload.to_owned()),
+            Payload::Local(payload) => Payload::Local(payload.clone()),
+        }
+    }
 }
 
 /// This is basically an observer pattern to receive the callbacks from

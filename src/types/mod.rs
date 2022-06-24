@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use crate::backends::Payload;
 use std::any::type_name;
 use std::cmp::Eq;
 use std::fmt;
@@ -35,14 +36,14 @@ pub struct Position {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Message<T: Clone> {
+pub struct Message<T> {
     pub partition: Partition,
     pub offset: u64,
     pub payload: T,
     pub timestamp: DateTime<Utc>,
 }
 
-impl<T: Clone> Message<T> {
+impl<T> Message<T> {
     pub fn new(partition: Partition, offset: u64, payload: T, timestamp: DateTime<Utc>) -> Self {
         Self {
             partition,
@@ -56,7 +57,7 @@ impl<T: Clone> Message<T> {
     }
 }
 
-impl<T: Clone> fmt::Display for Message<T> {
+impl<T> fmt::Display for Message<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -65,6 +66,17 @@ impl<T: Clone> fmt::Display for Message<T> {
             &self.partition,
             &self.offset
         )
+    }
+}
+
+impl<'a> Message<Payload<'a>> {
+    pub fn to_owned(&self) -> Message<Payload<'static>> {
+        Message {
+            partition: self.partition.clone(),
+            offset: self.offset.clone(),
+            payload: self.payload.to_owned(),
+            timestamp: self.timestamp.clone(),
+        }
     }
 }
 

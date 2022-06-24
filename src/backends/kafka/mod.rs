@@ -43,12 +43,11 @@ impl<'a> KafkaPayload<'a> {
             Self::Owned(ref msg) => msg.payload(),
         }
     }
-}
-impl<'a> Clone for KafkaPayload<'a> {
-    fn clone(&self) -> KafkaPayload<'a> {
+
+    pub fn to_owned(&self) -> KafkaPayload<'static> {
         match self {
-            Self::Borrowed(ref msg) => Self::Owned(msg.detach()),
-            Self::Owned(ref msg) => Self::Owned(msg.clone()),
+            Self::Borrowed(ref msg) => KafkaPayload::Owned(msg.detach()),
+            Self::Owned(ref msg) => KafkaPayload::Owned(msg.clone()),
         }
     }
 }

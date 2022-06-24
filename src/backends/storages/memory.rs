@@ -1,16 +1,17 @@
 use super::{ConsumeError, MessageStorage, TopicDoesNotExist, TopicExists};
 use crate::types::{Message, Partition, Topic};
+use crate::backends::Payload;
 use chrono::{DateTime, Utc};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
-struct TopicContent<TPayload: Clone> {
+struct TopicContent {
     partition_meta: Vec<Partition>,
-    partitions: HashMap<Partition, Vec<Message<TPayload>>>,
+    partitions: HashMap<Partition, Vec<Message<Payload<'static>>>>,
 }
 
-impl<TPayload: Clone> TopicContent<TPayload> {
+impl TopicContent {
     pub fn new(topic: &Topic, partitions: u16) -> Self {
         let mut queues = HashMap::new();
         let mut part_meta = Vec::new();
@@ -28,19 +29,19 @@ impl<TPayload: Clone> TopicContent<TPayload> {
         }
     }
 
-    fn get_messages(&self, partition: &Partition) -> Result<&Vec<Message<TPayload>>, ConsumeError> {
+    fn get_messages(&self, partition: &Partition) -> Result<&Vec<Message<Payload>>, ConsumeError> {
         if !self.partition_meta.contains(partition) {
             return Err(ConsumeError::PartitionDoesNotExist);
         }
         Ok(&self.partitions[partition])
     }
 
-    fn add_message(&mut self, message: Message<TPayload>) -> Result<(), ConsumeError> {
+    fn add_message(&mut self, message: Message<Payload>) -> Result<(), ConsumeError> {
         if !self.partition_meta.contains(&message.partition) {
             return Err(ConsumeError::PartitionDoesNotExist);
         }
         let stream = self.partitions.get_mut(&message.partition).unwrap();
-        stream.push(message);
+        stream.push(message.to_owned());
         Ok(())
     }
 
@@ -53,11 +54,11 @@ impl<TPayload: Clone> TopicContent<TPayload> {
     }
 }
 
-pub struct MemoryMessageStorage<TPayload: Clone> {
-    topics: HashMap<Topic, TopicContent<TPayload>>,
+pub struct MemoryMessageStorage {
+    topics: HashMap<Topic, TopicContent>,
 }
 
-impl<TPayload: Clone> Default for MemoryMessageStorage<TPayload> {
+impl Default for MemoryMessageStorage {
     fn default() -> Self {
         MemoryMessageStorage {
             topics: HashMap::new(),
@@ -65,7 +66,7 @@ impl<TPayload: Clone> Default for MemoryMessageStorage<TPayload> {
     }
 }
 
-impl<TPayload: Clone> MessageStorage<TPayload> for MemoryMessageStorage<TPayload> {
+impl MessageStorage for MemoryMessageStorage {
     fn create_topic(&mut self, topic: Topic, partitions: u16) -> Result<(), TopicExists> {
         if self.topics.contains_key(&topic) {
             return Err(TopicExists);
@@ -117,11 +118,11 @@ impl<TPayload: Clone> MessageStorage<TPayload> for MemoryMessageStorage<TPayload
         &self,
         partition: &Partition,
         offset: u64,
-    ) -> Result<Option<Message<TPayload>>, ConsumeError> {
+    ) -> Result<Option<Message<Payload>>, ConsumeError> {
         let n_offset = usize::try_from(offset).unwrap();
         let messages = self.topics[&partition.topic].get_messages(partition)?;
         match messages.len().cmp(&n_offset) {
-            Ordering::Greater => Ok(Some(messages[n_offset].clone())),
+            Ordering::Greater => Ok(Some(messages[n_offset].to_owned())),
             Ordering::Less => Err(ConsumeError::OffsetOutOfRange),
             Ordering::Equal => Ok(None),
         }
@@ -130,7 +131,7 @@ impl<TPayload: Clone> MessageStorage<TPayload> for MemoryMessageStorage<TPayload
     fn produce(
         &mut self,
         partition: &Partition,
-        payload: TPayload,
+        payload: Payload,
         timestamp: DateTime<Utc>,
     ) -> Result<u64, ConsumeError> {
         let messages = self
