@@ -2,7 +2,7 @@ extern crate rust_arroyo;
 
 use crate::rust_arroyo::backends::Producer;
 use clap::{App, Arg};
-use log::debug;
+// use log::debug;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::producer::DeliveryCallbacks;
 use rust_arroyo::backends::kafka::producer::KafkaProducer;
@@ -106,8 +106,6 @@ impl ProcessingStrategy<KafkaPayload> for Next {
             }),
         );
 
-        debug!("Produced message offset {}", message.offset);
-
         // TODO: MessageRejected should be handled by the StreamProcessor but
         // is not currently.
         if let Err(ProducerError::QueueFull) = res {
@@ -204,7 +202,7 @@ fn main() {
     let brokers = matches.value_of("brokers").unwrap();
     let group_id = matches.value_of("group-id").unwrap();
     let dest_topic = matches.value_of("dest-topic").unwrap();
-    env_logger::init();
+    // env_logger::init();
     let config = KafkaConfig::new_consumer_config(
         vec![brokers.to_string()],
         group_id.to_string(),
