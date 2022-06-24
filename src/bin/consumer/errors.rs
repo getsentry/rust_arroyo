@@ -77,7 +77,7 @@ impl ProcessingStrategy<KafkaPayload> for Next {
     fn poll(&mut self) -> Option<CommitRequest> {
         let now = SystemTime::now();
         let diff = now.duration_since(self.last_commit).unwrap();
-        if diff > COMMIT_INTERVAL {
+        if diff > COMMIT_INTERVAL && self.offsets.lock().unwrap().keys().len() > 0 {
             println!("Committing");
             let prev = mem::take(&mut self.offsets);
 
