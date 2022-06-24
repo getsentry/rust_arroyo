@@ -28,3 +28,7 @@ path = "src/bin/consumer/errors.rs"
 [[bin]]
 name = "passthrough-consumer"
 path = "src/bin/consumer/passthrough.rs"
+
+[[bin]]
+name = "noop-consumer"
+path = "src/bin/consumer/noop.rs"

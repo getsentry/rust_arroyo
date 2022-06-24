@@ -2,6 +2,7 @@ use crate::types::{Message, Partition, Position};
 use std::collections::HashMap;
 use std::time::Duration;
 
+pub mod noop;
 pub mod transform;
 
 #[derive(Debug, Clone)]
@@ -11,7 +12,7 @@ pub struct MessageRejected;
 pub struct InvalidMessage;
 
 /// Signals that we need to commit offsets
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CommitRequest {
     pub positions: HashMap<Partition, Position>,
 }
