@@ -130,7 +130,7 @@ impl Consumer for LocalConsumer {
         Ok(())
     }
 
-    fn poll(&self, _timeout: Option<Duration>) -> Result<Option<Message<Payload>>, PollError> {
+    fn poll(&mut self, _timeout: Option<Duration>) -> Result<Option<Message<Payload>>, PollError> {
         if self.closed {
             return Err(PollError::ConsumerClosed);
         }

@@ -109,7 +109,7 @@ pub trait Consumer {
     /// consumer attempts to read from an invalid location in one of it's
     /// assigned partitions. (Additional details can be found in the
     /// docstring for ``Consumer.seek``.)
-    fn poll(&self, timeout: Option<Duration>) -> Result<Option<Message<Payload>>, PollError>;
+    fn poll(&mut self, timeout: Option<Duration>) -> Result<Option<Message<Payload>>, PollError>;
 
     /// Pause consuming from the provided partitions.
     ///

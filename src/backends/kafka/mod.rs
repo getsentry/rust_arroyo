@@ -180,7 +180,7 @@ impl ArroyoConsumer for KafkaConsumer {
     }
 
     fn poll(
-        &self,
+        &mut self,
         timeout: Option<Duration>,
     ) -> Result<Option<ArroyoMessage<Payload<'_>>>, PollError> {
         let duration = timeout.unwrap_or(Duration::from_millis(100));
