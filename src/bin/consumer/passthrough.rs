@@ -1,5 +1,6 @@
 use clap::{App, Arg};
 use futures::future::{try_join_all, Future};
+use log::{debug, error, info};
 use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
@@ -24,15 +25,15 @@ impl ClientContext for CustomContext {}
 
 impl ConsumerContext for CustomContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
-        println!("Pre rebalance {:?}", rebalance);
+        info!("Pre rebalance {:?}", rebalance);
     }
 
     fn post_rebalance(&self, rebalance: &Rebalance) {
-        println!("Post rebalance {:?}", rebalance);
+        info!("Post rebalance {:?}", rebalance);
     }
 
     fn commit_callback(&self, result: KafkaResult<()>, _offsets: &TopicPartitionList) {
-        println!("Committing offsets: {:?}", result);
+        info!("Committing offsets: {:?}", result);
     }
 }
 
@@ -72,7 +73,7 @@ async fn flush_batch(
                 .collect();
             let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
             consumer.commit(&partition_list, CommitMode::Sync).unwrap();
-            println!("Committed: {:?}", topic_map);
+            info!("Committed: {:?}", topic_map);
         }
     }
     batch.clear();
@@ -109,7 +110,7 @@ async fn consume_and_produce(
         .set("message.timeout.ms", "5000")
         .create()
         .expect("couldn't create producer");
-    println!(
+    info!(
         "Beginning poll {:?}",
         vec![brokers, group_id, source_topic, dest_topic]
     );
@@ -149,7 +150,7 @@ async fn consume_and_produce(
                 }
             }
             Err(_) => {
-                println!("timeoout, flushing batch");
+                error!("timeoout, flushing batch");
                 flush_batch(&consumer, &mut batch, String::from(source_topic)).await;
             }
         }
@@ -198,7 +199,7 @@ async fn main() {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("batch_size")
+            Arg::with_name("batch-size")
                 .long("batch_size")
                 .help("size of the batch for flushing")
                 .default_value("10")
@@ -207,14 +208,15 @@ async fn main() {
         .get_matches();
 
     let (version_n, version_s) = get_rdkafka_version();
-    println!("rd_kafka_version: 0x{:08x}, {}", version_n, version_s);
+    env_logger::init();
+    debug!("rd_kafka_version: 0x{:08x}, {}", version_n, version_s);
 
     let source_topic = matches.value_of("source-topic").unwrap();
     let brokers = matches.value_of("brokers").unwrap();
     let group_id = matches.value_of("group-id").unwrap();
     let dest_topic = matches.value_of("dest-topic").unwrap();
     let batch_size = matches
-        .value_of("batch_size")
+        .value_of("batch-size")
         .unwrap()
         .parse::<usize>()
         .unwrap();
