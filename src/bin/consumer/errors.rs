@@ -78,12 +78,15 @@ impl ProcessingStrategy<KafkaPayload> for Next {
         let now = SystemTime::now();
         let diff = now.duration_since(self.last_commit).unwrap();
         if diff > COMMIT_INTERVAL && self.offsets.lock().unwrap().keys().len() > 0 {
+            println!("Committing");
             let prev = mem::take(&mut self.offsets);
 
             let mut positions_to_commit = HashMap::new();
             for (k, v) in prev.lock().unwrap().iter() {
                 positions_to_commit.insert(k.clone(), v.clone());
             }
+
+            self.last_commit = now;
 
             return Some(CommitRequest {
                 positions: positions_to_commit,
