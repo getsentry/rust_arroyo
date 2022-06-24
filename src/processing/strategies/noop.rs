@@ -16,10 +16,11 @@ impl ProcessingStrategy<KafkaPayload> for NoopCommit {
     }
 
     fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
+        let next_offset = message.next_offset();
         self.partitions.insert(
             message.partition,
             Position {
-                offset: message.offset,
+                offset: next_offset,
                 timestamp: message.timestamp,
             },
         );
@@ -123,7 +124,7 @@ mod tests {
         commit_req1.positions.insert(
             partition1,
             Position {
-                offset: 1000,
+                offset: 1001,
                 timestamp,
             },
         );
@@ -139,7 +140,7 @@ mod tests {
         commit_req2.positions.insert(
             partition2,
             Position {
-                offset: 2000,
+                offset: 2001,
                 timestamp,
             },
         );
