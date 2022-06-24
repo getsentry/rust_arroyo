@@ -3,32 +3,72 @@ use crate::backends::kafka::types::KafkaPayload;
 use crate::backends::Producer as ArroyoProducer;
 use crate::backends::ProducerError;
 use crate::types::TopicOrPartition;
+use rdkafka::client::ClientContext;
 use rdkafka::config::ClientConfig;
-use rdkafka::producer::{BaseRecord, DefaultProducerContext, Producer, ThreadedProducer};
+use rdkafka::config::FromClientConfigAndContext;
+use rdkafka::producer::{BaseRecord, Producer, ThreadedProducer};
+use rdkafka::producer::{DeliveryResult, ProducerContext};
+use rdkafka::util::IntoOpaque;
+use std::sync::Mutex;
 use std::time::Duration;
 
-pub struct KafkaProducer {
-    producer: Option<ThreadedProducer<DefaultProducerContext>>,
+struct CustomContext<T> {
+    callbacks: Mutex<Box<dyn DeliveryCallbacks<T>>>,
 }
 
-impl KafkaProducer {
-    pub fn new(config: KafkaConfig) -> Self {
-        let config_obj: ClientConfig = config.into();
-        let base_producer: ThreadedProducer<_> = config_obj.create().unwrap();
+impl<T> ClientContext for CustomContext<T> {}
 
-        Self {
-            producer: Some(base_producer),
+impl<T: IntoOpaque> ProducerContext for CustomContext<T> {
+    type DeliveryOpaque = T;
+
+    fn delivery(
+        &self,
+        delivery_result: &DeliveryResult<'_>,
+        delivery_opaque: Self::DeliveryOpaque,
+    ) {
+        match delivery_result.as_ref() {
+            Ok(_) => {
+                self.callbacks.lock().unwrap().on_delivery(delivery_opaque);
+            }
+            Err(_) => println!("Failed to deliver message"),
         }
     }
 }
 
-impl KafkaProducer {}
+// TODO: We should probably use async functions instead of these complicated callbacks
+// Keeping it this way in line with the Kafka consumer implementation
+pub trait DeliveryCallbacks<T>: Send + Sync {
+    fn on_delivery(&mut self, msg_id: T);
+}
 
-impl ArroyoProducer<KafkaPayload> for KafkaProducer {
+pub struct KafkaProducer<T: 'static + IntoOpaque> {
+    producer: Option<ThreadedProducer<CustomContext<T>>>,
+}
+
+impl<T: 'static + IntoOpaque> KafkaProducer<T> {
+    pub fn new(config: KafkaConfig, delivery_callbacks: Box<dyn DeliveryCallbacks<T>>) -> Self {
+        let config_obj: ClientConfig = config.into();
+
+        let producer = ThreadedProducer::from_config_and_context(
+            &config_obj,
+            CustomContext {
+                callbacks: Mutex::new(delivery_callbacks),
+            },
+        )
+        .unwrap();
+
+        Self {
+            producer: Some(producer),
+        }
+    }
+}
+
+impl<T: IntoOpaque> ArroyoProducer<KafkaPayload, T> for KafkaProducer<T> {
     fn produce(
         &self,
         destination: &TopicOrPartition,
         payload: &KafkaPayload,
+        msg_id: T,
     ) -> Result<(), ProducerError> {
         let topic = match destination {
             TopicOrPartition::Topic(topic) => topic.name.as_ref(),
@@ -40,7 +80,9 @@ impl ArroyoProducer<KafkaPayload> for KafkaProducer {
         let msg_key = payload_copy.key.unwrap_or_default();
         let msg_payload = payload_copy.payload.unwrap_or_default();
 
-        let mut base_record = BaseRecord::to(topic).payload(&msg_payload).key(&msg_key);
+        let mut base_record = BaseRecord::with_opaque_to(topic, msg_id)
+            .payload(&msg_payload)
+            .key(&msg_key);
 
         let partition = match destination {
             TopicOrPartition::Topic(_) => None,
@@ -75,7 +117,7 @@ impl ArroyoProducer<KafkaPayload> for KafkaProducer {
 
 #[cfg(test)]
 mod tests {
-    use super::KafkaProducer;
+    use super::{DeliveryCallbacks, KafkaProducer};
     use crate::backends::kafka::config::KafkaConfig;
     use crate::backends::kafka::types::KafkaPayload;
     use crate::backends::Producer;
@@ -89,14 +131,23 @@ mod tests {
         let configuration =
             KafkaConfig::new_producer_config(vec!["localhost:9092".to_string()], None);
 
-        let mut producer = KafkaProducer::new(configuration);
+        struct MyCallbacks {}
+
+        impl DeliveryCallbacks<usize> for MyCallbacks {
+            fn on_delivery(&mut self, msg_id: usize) {
+                println!("Message ID {}", msg_id);
+            }
+        }
+
+        let mut producer: KafkaProducer<usize> =
+            KafkaProducer::new(configuration, Box::new(MyCallbacks {}));
 
         let payload = KafkaPayload {
             key: None,
             headers: None,
             payload: Some("asdf".as_bytes().to_vec()),
         };
-        producer.produce(&destination, &payload).unwrap();
+        producer.produce(&destination, &payload, 1).unwrap();
         producer.close();
     }
 }
