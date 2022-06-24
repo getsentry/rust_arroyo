@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use thiserror::Error;
 
+pub mod noop;
 pub mod transform;
 
 #[derive(Error, Debug)]
@@ -14,7 +15,7 @@ pub enum ProcessingError {
 }
 
 /// Signals that we need to commit offsets
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CommitRequest {
     pub positions: HashMap<Partition, Position>,
 }

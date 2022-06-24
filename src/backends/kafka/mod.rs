@@ -131,9 +131,7 @@ impl ConsumerContext for CustomContext {
         }
     }
 
-    fn commit_callback(&self, _: KafkaResult<()>, _offsets: &TopicPartitionList) {
-        println!("COMMIT");
-    }
+    fn commit_callback(&self, _: KafkaResult<()>, _offsets: &TopicPartitionList) {}
 }
 
 pub struct KafkaConsumer {
