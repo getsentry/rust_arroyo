@@ -15,7 +15,6 @@ use rust_arroyo::processing::strategies::{CommitRequest, ProcessingError, Proces
 use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::{Message, Partition, Position, Topic, TopicOrPartition};
 use std::collections::HashMap;
-use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -77,20 +76,20 @@ impl ProcessingStrategy<KafkaPayload> for Next {
     fn poll(&mut self) -> Option<CommitRequest> {
         let now = SystemTime::now();
         let diff = now.duration_since(self.last_commit).unwrap();
-        if diff > COMMIT_INTERVAL && self.offsets.lock().unwrap().keys().len() > 0 {
-            println!("Committing");
-            let prev = mem::take(&mut self.offsets);
 
-            let mut positions_to_commit = HashMap::new();
-            for (k, v) in prev.lock().unwrap().iter() {
-                positions_to_commit.insert(k.clone(), v.clone());
+        if diff > COMMIT_INTERVAL {
+            let mut offsets = self.offsets.lock().unwrap();
+            if offsets.is_empty() {
+                let mut positions_to_commit = HashMap::new();
+                for (k, v) in offsets.iter() {
+                    positions_to_commit.insert(k.clone(), v.clone());
+                }
+                offsets.clear();
+                self.last_commit = now;
+                return Some(CommitRequest {
+                    positions: positions_to_commit,
+                });
             }
-
-            self.last_commit = now;
-
-            return Some(CommitRequest {
-                positions: positions_to_commit,
-            });
         }
 
         None
