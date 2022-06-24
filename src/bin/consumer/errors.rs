@@ -94,13 +94,14 @@ impl ProcessingStrategy<KafkaPayload> for Next {
     }
 
     fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), ProcessingError> {
+        let offset_to_commit = message.next_offset();
         let res = self.producer.produce(
             &self.destination,
             &message.payload,
             Box::new(CommitData {
                 partition: message.partition,
                 position: Position {
-                    offset: message.offset,
+                    offset: offset_to_commit,
                     timestamp: message.timestamp,
                 },
             }),
