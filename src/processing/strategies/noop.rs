@@ -1,6 +1,7 @@
 use crate::backends::kafka::types::KafkaPayload;
 use crate::processing::strategies::{CommitRequest, MessageRejected, ProcessingStrategy};
 use crate::types::{Message, Partition, Position};
+use log::info;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
@@ -43,6 +44,7 @@ impl NoopCommit {
                 .unwrap()
             || force
         {
+            info!("Performing a commit");
             if !self.partitions.is_empty() {
                 let ret = Some(CommitRequest {
                     positions: self.partitions.clone(),
@@ -78,6 +80,7 @@ mod tests {
 
     #[test]
     fn test_noop() {
+        env_logger::init();
         let partition1 = Partition {
             topic: Topic {
                 name: "noop-commit".to_string(),

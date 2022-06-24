@@ -1,6 +1,7 @@
 extern crate rust_arroyo;
 
 use clap::{App, Arg};
+use log::info;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
 use rust_arroyo::backends::kafka::KafkaConsumer;
@@ -55,14 +56,14 @@ fn main() {
         )
         .arg(
             Arg::with_name("source-topic")
-                .long("source")
+                .long("source-topic")
                 .help("source topic name")
                 .default_value("test_source")
                 .takes_value(true),
         )
         .arg(
             Arg::with_name("batch-time")
-                .long("batch_time")
+                .long("batch-time")
                 .help("time of the batch for flushing")
                 .default_value("100")
                 .takes_value(true),
@@ -76,12 +77,13 @@ fn main() {
         )
         .get_matches();
 
+    env_logger::init();
     let source_topic = matches.value_of("source-topic").unwrap();
     let offset_reset = matches.value_of("offset-reset").unwrap();
     let brokers = matches.value_of("brokers").unwrap();
     let group_id = matches.value_of("group-id").unwrap();
     let batch_time = matches
-        .value_of("batch_time")
+        .value_of("batch-time")
         .unwrap()
         .parse::<u64>()
         .unwrap();
@@ -100,6 +102,7 @@ fn main() {
     let mut stream_processor =
         StreamProcessor::new(Box::new(consumer), Box::new(StrategyFactory { batch_time }));
 
+    info!("Starting no-op consumer");
     stream_processor.subscribe(topic);
     stream_processor.run().unwrap();
 }
