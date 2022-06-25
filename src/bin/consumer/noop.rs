@@ -99,6 +99,7 @@ fn main() {
     let topic = Topic {
         name: source_topic.to_string(),
     };
+
     let mut stream_processor =
         StreamProcessor::new(Box::new(consumer), Box::new(StrategyFactory { batch_time }));
 
