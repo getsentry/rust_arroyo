@@ -12,8 +12,6 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use rdkafka::util::get_rdkafka_version;
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
-use serde_json::*;
 use std::boxed::Box;
 use std::cmp::max;
 use std::collections::HashMap;
@@ -97,7 +95,7 @@ struct MetricsPayload {
 
 fn transform_message(payload: &str) -> String {
     let deserialized: MetricsPayload = serde_json::from_str(&payload).unwrap();
-    return serde_json::to_string(&deserialized).unwrap();
+    serde_json::to_string(&deserialized).unwrap()
 }
 
 async fn consume_and_produce(
