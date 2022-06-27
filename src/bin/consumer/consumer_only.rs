@@ -11,7 +11,7 @@ use rust_arroyo::processing::strategies::{noop, ProcessingStrategyFactory};
 use rust_arroyo::types::{Partition, Position, Topic};
 use std::collections::HashMap;
 use std::mem;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 struct EmptyCallbacks {}
 impl AssignmentCallbacks for EmptyCallbacks {
@@ -26,6 +26,31 @@ impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
     fn create(&self) -> Box<dyn ProcessingStrategy<KafkaPayload>> {
         Box::new(noop::new(Duration::from_millis(self.batch_time)))
     }
+}
+
+const COMMIT_FREQUENCY: Duration = Duration::from_secs(10);
+
+fn commit_offsets(
+    consumer: &mut KafkaConsumer,
+    topic: Topic,
+    offsets_to_commit: HashMap<u16, u64>,
+) {
+    let mut positions = HashMap::new();
+
+    for (partition, last_offset) in offsets_to_commit {
+        positions.insert(
+            Partition {
+                topic: topic.clone(),
+                index: partition,
+            },
+            Position {
+                offset: last_offset + 1,
+                timestamp: chrono::Utc::now(),
+            },
+        );
+    }
+    consumer.stage_positions(positions).unwrap();
+    consumer.commit_positions().unwrap();
 }
 
 fn main() {
@@ -106,6 +131,7 @@ fn main() {
         .unwrap();
 
     let mut last_offsets: HashMap<u16, u64> = HashMap::new();
+    let mut last_commit_time = SystemTime::UNIX_EPOCH;
 
     loop {
         let res = consumer.poll(None);
@@ -115,27 +141,11 @@ fn main() {
                 Some(message) => {
                     // Do nothing
                     last_offsets.insert(message.partition.index, message.offset);
-
-                    // Commit every 100k messages
-                    if message.offset % 100_000 == 0 {
-                        let mut positions = HashMap::new();
-
+                    let now = SystemTime::now();
+                    if SystemTime::now() > last_commit_time.checked_add(COMMIT_FREQUENCY).unwrap() {
                         let offsets_to_commit = mem::take(&mut last_offsets);
-                        for (partition, last_offset) in offsets_to_commit {
-                            positions.insert(
-                                Partition {
-                                    topic: topic.clone(),
-                                    index: partition,
-                                },
-                                Position {
-                                    offset: last_offset + 1,
-                                    timestamp: chrono::Utc::now(),
-                                },
-                            );
-                        }
-
-                        consumer.stage_positions(positions).unwrap();
-                        consumer.commit_positions().unwrap();
+                        commit_offsets(&mut consumer, topic.clone(), offsets_to_commit);
+                        last_commit_time = now;
                     }
                 }
                 None => {
@@ -143,23 +153,8 @@ fn main() {
                         continue;
                     }
                     // If we got here we should have burned the backlog
-                    let mut positions = HashMap::new();
-
                     let offsets_to_commit = mem::take(&mut last_offsets);
-                    for (partition, last_offset) in offsets_to_commit {
-                        positions.insert(
-                            Partition {
-                                topic: topic.clone(),
-                                index: partition,
-                            },
-                            Position {
-                                offset: last_offset + 1,
-                                timestamp: chrono::Utc::now(),
-                            },
-                        );
-                    }
-                    consumer.stage_positions(positions).unwrap();
-                    consumer.commit_positions().unwrap();
+                    commit_offsets(&mut consumer, topic.clone(), offsets_to_commit);
                 }
             },
         }
