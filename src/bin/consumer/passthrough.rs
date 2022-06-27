@@ -81,6 +81,16 @@ async fn flush_batch(
 }
 
 // '{"org_id": 1, "project_id": 1, "name": "sentry.sessions.session.duration", "unit": "s", "type": "d", "value": [948.7285023840417, 229.7264210041775, 855.1960305024135, 475.592711958219, 825.5422355278084, 916.3170826715101], "timestamp": 1655940182, "tags": {"environment": "env-1", "release": "v1.1.1", "session.status": "exited"}}
+//
+//
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum MetricValue {
+    Vector(Vec<f32>),
+    Float(f32),
+}
+
 #[derive(Serialize, Deserialize)]
 struct MetricsPayload {
     org_id: i64,
@@ -88,7 +98,7 @@ struct MetricsPayload {
     name: String,
     unit: String,
     r#type: String,
-    value: Vec<f32>,
+    value: MetricValue,
     timestamp: i64,
     tags: HashMap<String, String>,
 }
@@ -104,7 +114,7 @@ fn transform_message(payload: &str) -> String {
                 name: String::from("fail"),
                 unit: String::from("fail"),
                 r#type: String::from("fail"),
-                value: vec![4.2069],
+                value: MetricValue::Float(4.2069),
                 timestamp: 1234,
                 tags: HashMap::new(),
             }
