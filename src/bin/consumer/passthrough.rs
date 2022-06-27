@@ -94,7 +94,23 @@ struct MetricsPayload {
 }
 
 fn transform_message(payload: &str) -> String {
-    serde_json::to_string(&serde_json::from_str::<MetricsPayload>(&payload).unwrap()).unwrap()
+    let payload = match serde_json::from_str::<MetricsPayload>(&payload) {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Could not parse payload! {:?}, {:?}", payload, e);
+            MetricsPayload {
+                org_id: 1,
+                project_id: 1,
+                name: String::from("fail"),
+                unit: String::from("fail"),
+                r#type: String::from("fail"),
+                value: vec![4.2069],
+                timestamp: 1234,
+                tags: HashMap::new(),
+            }
+        }
+    };
+    serde_json::to_string(&payload).unwrap()
 }
 
 async fn consume_and_produce(
