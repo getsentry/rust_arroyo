@@ -157,7 +157,7 @@ mod tests {
         }
 
         let mut producer: KafkaProducer<usize> =
-            KafkaProducer::new(configuration, Box::new(MyCallbacks {}));
+            KafkaProducer::new(configuration, Some(Box::new(MyCallbacks {})));
 
         let payload = KafkaPayload {
             key: None,
