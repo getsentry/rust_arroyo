@@ -165,7 +165,8 @@ async fn consume_and_produce(
                 match result {
                     Err(e) => panic!("Kafka error: {}", e),
                     Ok(m) => {
-                        let payload_str = match m.payload_view::<str>() {
+                        let m_clone = m.detach();
+                        let payload_str = match m_clone.payload_view::<str>() {
                             None => "",
                             Some(Ok(s)) => s,
                             Some(Err(e)) => {
