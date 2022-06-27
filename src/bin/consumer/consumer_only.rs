@@ -28,7 +28,7 @@ impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
     }
 }
 
-const COMMIT_FREQUENCY: Duration = Duration::from_secs(10);
+const COMMIT_FREQUENCY: Duration = Duration::from_secs(5);
 
 fn commit_offsets(
     consumer: &mut KafkaConsumer,
