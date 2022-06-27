@@ -174,7 +174,5 @@ pub trait Producer<TPayload, T> {
         msg_id: T,
     ) -> Result<(), ProducerError>;
 
-    fn flush(&self);
-
     fn close(&mut self);
 }

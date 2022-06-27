@@ -58,9 +58,9 @@ impl Next {
         let offsets = Arc::new(Mutex::new(HashMap::new()));
         let producer = KafkaProducer::new(
             config,
-            Box::new(ProducerCallbacks {
+            Some(Box::new(ProducerCallbacks {
                 offsets: offsets.clone(),
-            }),
+            })),
         );
 
         Self {

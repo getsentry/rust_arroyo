@@ -6,14 +6,19 @@ use crate::types::TopicOrPartition;
 use rdkafka::client::ClientContext;
 use rdkafka::config::ClientConfig;
 use rdkafka::config::FromClientConfigAndContext;
-use rdkafka::producer::{BaseRecord, Producer, ThreadedProducer};
-use rdkafka::producer::{DeliveryResult, ProducerContext};
+use rdkafka::producer::{BaseRecord, DeliveryResult, Producer, ProducerContext, ThreadedProducer};
 use rdkafka::util::IntoOpaque;
 use std::sync::Mutex;
 use std::time::Duration;
 
 struct CustomContext<T> {
     callbacks: Mutex<Box<dyn DeliveryCallbacks<T>>>,
+}
+
+struct EmptyCallbacks {}
+
+impl<T> DeliveryCallbacks<T> for EmptyCallbacks {
+    fn on_delivery(&mut self, _: T) {}
 }
 
 impl<T> ClientContext for CustomContext<T> {}
@@ -46,13 +51,18 @@ pub struct KafkaProducer<T: 'static + IntoOpaque> {
 }
 
 impl<T: 'static + IntoOpaque> KafkaProducer<T> {
-    pub fn new(config: KafkaConfig, delivery_callbacks: Box<dyn DeliveryCallbacks<T>>) -> Self {
+    pub fn new(
+        config: KafkaConfig,
+        delivery_callbacks: Option<Box<dyn DeliveryCallbacks<T>>>,
+    ) -> Self {
         let config_obj: ClientConfig = config.into();
+
+        let callbacks = delivery_callbacks.unwrap_or(Box::new(EmptyCallbacks {}));
 
         let producer = ThreadedProducer::from_config_and_context(
             &config_obj,
             CustomContext {
-                callbacks: Mutex::new(delivery_callbacks),
+                callbacks: Mutex::new(callbacks),
             },
         )
         .unwrap();
@@ -60,6 +70,18 @@ impl<T: 'static + IntoOpaque> KafkaProducer<T> {
         Self {
             producer: Some(producer),
         }
+    }
+}
+
+impl<T: IntoOpaque> KafkaProducer<T> {
+    pub fn poll(&self) {
+        let producer = self.producer.as_ref().unwrap();
+        producer.poll(Duration::ZERO);
+    }
+
+    pub fn flush(&self) {
+        let producer = self.producer.as_ref().unwrap();
+        producer.flush(Duration::from_millis(5000));
     }
 }
 
@@ -103,11 +125,6 @@ impl<T: IntoOpaque> ArroyoProducer<KafkaPayload, T> for KafkaProducer<T> {
         }
 
         Ok(())
-    }
-
-    fn flush(&self) {
-        let producer = self.producer.as_ref().unwrap();
-        producer.flush(Duration::from_millis(10_000));
     }
 
     fn close(&mut self) {
