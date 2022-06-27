@@ -57,7 +57,7 @@ impl<T: 'static + IntoOpaque> KafkaProducer<T> {
     ) -> Self {
         let config_obj: ClientConfig = config.into();
 
-        let callbacks = delivery_callbacks.unwrap_or(Box::new(EmptyCallbacks {}));
+        let callbacks = delivery_callbacks.unwrap_or_else(|| Box::new(EmptyCallbacks {}));
 
         let producer = ThreadedProducer::from_config_and_context(
             &config_obj,
