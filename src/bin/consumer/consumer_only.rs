@@ -10,6 +10,7 @@ use rust_arroyo::processing::strategies::ProcessingStrategy;
 use rust_arroyo::processing::strategies::{noop, ProcessingStrategyFactory};
 use rust_arroyo::types::{Partition, Position, Topic};
 use std::collections::HashMap;
+use std::mem;
 use std::time::Duration;
 
 struct EmptyCallbacks {}
@@ -104,7 +105,7 @@ fn main() {
         .subscribe(&[topic.clone()], Box::new(EmptyCallbacks {}))
         .unwrap();
 
-    let mut last_offset: u64 = 0;
+    let mut last_offsets: HashMap<u16, u64> = HashMap::new();
 
     loop {
         let res = consumer.poll(None);
@@ -113,15 +114,43 @@ fn main() {
             Ok(val) => match val {
                 Some(message) => {
                     // Do nothing
-                    last_offset = message.offset;
+                    last_offsets.insert(message.partition.index, message.offset);
 
                     // Commit every 100k messages
-                    if last_offset % 100_000 == 0 {
+                    if message.offset % 100_000 == 0 {
                         let mut positions = HashMap::new();
+
+                        let offsets_to_commit = mem::take(&mut last_offsets);
+                        for (partition, last_offset) in offsets_to_commit {
+                            positions.insert(
+                                Partition {
+                                    topic: topic.clone(),
+                                    index: partition,
+                                },
+                                Position {
+                                    offset: last_offset + 1,
+                                    timestamp: chrono::Utc::now(),
+                                },
+                            );
+                        }
+
+                        consumer.stage_positions(positions).unwrap();
+                        consumer.commit_positions().unwrap();
+                    }
+                }
+                None => {
+                    if last_offsets.is_empty() {
+                        continue;
+                    }
+                    // If we got here we should have burned the backlog
+                    let mut positions = HashMap::new();
+
+                    let offsets_to_commit = mem::take(&mut last_offsets);
+                    for (partition, last_offset) in offsets_to_commit {
                         positions.insert(
                             Partition {
                                 topic: topic.clone(),
-                                index: 0, // One partition hardcoded
+                                index: partition,
                             },
                             Position {
                                 offset: last_offset + 1,
@@ -129,26 +158,7 @@ fn main() {
                             },
                         );
                     }
-                }
-                None => {
-                    if last_offset == 0 {
-                        continue;
-                    }
-                    println!("Timed out waiting for message, committing offsets");
-                    // If we got here we should have burned the backlog
-                    let mut positions = HashMap::new();
-                    positions.insert(
-                        Partition {
-                            topic: topic.clone(),
-                            index: 0, // One partition hardcoded
-                        },
-                        Position {
-                            offset: last_offset + 1,
-                            timestamp: chrono::Utc::now(),
-                        },
-                    );
                     consumer.stage_positions(positions).unwrap();
-
                     consumer.commit_positions().unwrap();
                 }
             },
