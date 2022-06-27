@@ -196,7 +196,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     ) -> Result<Option<ArroyoMessage<KafkaPayload>>, ConsumerError> {
         self.state.assert_consuming_state()?;
 
-        let duration = timeout.unwrap_or(Duration::from_millis(100));
+        let duration = timeout;
         let consumer = self.consumer.as_mut().unwrap();
         let res = consumer.poll(duration);
         match res {
