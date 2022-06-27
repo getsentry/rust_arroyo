@@ -1,9 +1,10 @@
 use crate::backends::kafka::config::KafkaConfig;
 use crate::backends::kafka::types::KafkaPayload;
-use crate::backends::Producer;
+use crate::backends::Producer as ArroyoProducer;
 use crate::types::TopicOrPartition;
 use rdkafka::config::ClientConfig;
-use rdkafka::producer::{BaseProducer, BaseRecord};
+use rdkafka::producer::{BaseProducer, BaseRecord, Producer};
+use std::time::Duration;
 
 pub struct KafkaProducer {
     producer: Option<BaseProducer>,
@@ -20,7 +21,19 @@ impl KafkaProducer {
     }
 }
 
-impl Producer<KafkaPayload> for KafkaProducer {
+impl KafkaProducer {
+    pub fn poll(&self) {
+        let producer = self.producer.as_ref().unwrap();
+        producer.poll(Duration::ZERO);
+    }
+
+    pub fn flush(&self) {
+        let producer = self.producer.as_ref().unwrap();
+        producer.flush(Duration::from_millis(5000));
+    }
+}
+
+impl ArroyoProducer<KafkaPayload> for KafkaProducer {
     fn produce(&self, destination: &TopicOrPartition, payload: &KafkaPayload) {
         let topic = match destination {
             TopicOrPartition::Topic(topic) => topic.name.as_ref(),
