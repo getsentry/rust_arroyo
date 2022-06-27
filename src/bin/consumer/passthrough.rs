@@ -94,8 +94,7 @@ struct MetricsPayload {
 }
 
 fn transform_message(payload: &str) -> String {
-    let deserialized: MetricsPayload = serde_json::from_str(&payload).unwrap();
-    serde_json::to_string(&deserialized).unwrap()
+    serde_json::to_string(&serde_json::from_str::<MetricsPayload>(&payload).unwrap()).unwrap()
 }
 
 async fn consume_and_produce(
@@ -226,7 +225,7 @@ async fn main() {
         )
         .arg(
             Arg::with_name("batch-size")
-                .long("batch_size")
+                .long("batch-size")
                 .help("size of the batch for flushing")
                 .default_value("10")
                 .takes_value(true),
