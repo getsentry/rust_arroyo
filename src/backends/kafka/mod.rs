@@ -277,6 +277,11 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError> {
         self.state.assert_consuming_state()?;
 
+        // Nothing to commit
+        if self.staged_offsets.is_empty() {
+            return Ok(HashMap::new());
+        }
+
         let mut topic_map = HashMap::new();
         for (partition, position) in self.staged_offsets.iter() {
             topic_map.insert(
@@ -287,6 +292,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
 
         let consumer = self.consumer.as_mut().unwrap();
         let partitions = TopicPartitionList::from_topic_map(&topic_map).unwrap();
+
+        println!("Committing {:?}", partitions);
         let _ = consumer.commit(&partitions, CommitMode::Sync).unwrap();
 
         // Clear staged offsets
