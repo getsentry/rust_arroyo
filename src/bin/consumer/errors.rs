@@ -79,7 +79,7 @@ impl ProcessingStrategy<KafkaPayload> for Next {
 
         if diff > COMMIT_INTERVAL {
             let mut offsets = self.offsets.lock().unwrap();
-            if offsets.is_empty() {
+            if !offsets.is_empty() {
                 let mut positions_to_commit = HashMap::new();
                 for (k, v) in offsets.iter() {
                     positions_to_commit.insert(k.clone(), v.clone());
