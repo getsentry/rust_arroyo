@@ -2,25 +2,19 @@ extern crate core;
 
 use crate::MetricValue::Vector;
 use clap::{App, Arg};
-use futures::future::{try_join_all, Future};
 use log::{debug, error, info};
 use rand::Rng;
 use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
+use rdkafka::consumer::{Consumer, ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
 use rdkafka::message::Message;
-use rdkafka::producer::future_producer::OwnedDeliveryResult;
-use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
+use rdkafka::topic_partition_list::TopicPartitionList;
 use rdkafka::util::get_rdkafka_version;
+use rust_arroyo::utils::clickhouse_client;
 use serde::{Deserialize, Serialize};
-use std::borrow::Borrow;
-use std::boxed::Box;
-use std::cmp::max;
 use std::collections::HashMap;
-use std::pin::Pin;
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::time::timeout;
@@ -44,30 +38,19 @@ impl ConsumerContext for CustomContext {
 }
 
 // A type alias with your custom consumer can be created for convenience.
-type LoggingConsumer = StreamConsumer<CustomContext>;
-type FutureBatch<T> = Vec<Pin<Box<T>>>;
+type MetricsConsumer = StreamConsumer<CustomContext>;
 
-async fn flush_batch(
-    consumer: &LoggingConsumer,
-    batch: &mut FutureBatch<impl Future<Output = OwnedDeliveryResult>>,
-    source_topic: String,
-) {
-    if batch.is_empty() {
-        println!("batch is empty, nothing to flush");
-        return;
-    }
-
-    batch.clear();
-}
-
-#[derive(strum_macros::Display, Deserialize, Serialize, Debug)]
+#[derive(strum_macros::Display, Deserialize, Serialize, Debug, Clone)]
 enum MetricType {
-    c,
-    d,
-    s,
+    #[serde(rename = "c")]
+    C,
+    #[serde(rename = "d")]
+    D,
+    #[serde(rename = "s")]
+    S,
 }
 
-// '{"org_id": 1, "project_id": 1, "name": "sentry.sessions.session.duration", "unit": "s", "type": "d", "value": [948.7285023840417, 229.7264210041775, 855.1960305024135, 475.592711958219, 825.5422355278084, 916.3170826715101], "timestamp": 1655940182, "tags": {"environment": "env-1", "release": "v1.1.1", "session.status": "exited"}}
+// '{"org_id": 1, "project_id": 1, "name": "sentry.sessions.session.duration", "unit": "S", "type": "D", "value": [948.7285023840417, 229.7264210041775, 855.1960305024135, 475.592711958219, 825.5422355278084, 916.3170826715101], "timestamp": 1655940182, "tags": {"environment": "env-1", "release": "v1.1.1", "session.status": "exited"}}
 //
 //
 
@@ -79,7 +62,7 @@ enum MetricValue {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct MetricsInPayload {
+pub struct MetricsInPayload {
     org_id: i64,
     project_id: i64,
     name: String,
@@ -91,7 +74,7 @@ struct MetricsInPayload {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct MetricsOutPayload {
+pub struct MetricsOutPayload {
     use_case_id: String,
     org_id: u64,
     project_id: u64,
@@ -101,7 +84,7 @@ struct MetricsOutPayload {
     tags_key: Vec<u64>,
     #[serde(rename = "tags.value")]
     tags_value: Vec<u64>,
-    metric_type: String,
+    metric_type: MetricType,
     set_values: Vec<u64>,
     count_value: f64,
     distribution_values: Vec<f64>,
@@ -111,7 +94,12 @@ struct MetricsOutPayload {
     offset: u64,
 }
 
-pub fn newMetricsOut(payload: &MetricsInPayload) -> MetricsOutPayload {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MetricsOutContainer {
+    metrics_out_payload: Vec<MetricsOutPayload>,
+}
+
+pub fn new_metrics_out(payload: &MetricsInPayload) -> MetricsOutPayload {
     let mut out = MetricsOutPayload {
         use_case_id: "1".parse().unwrap(),
         org_id: payload.org_id as u64,
@@ -120,7 +108,7 @@ pub fn newMetricsOut(payload: &MetricsInPayload) -> MetricsOutPayload {
         timestamp: payload.timestamp as u64,
         tags_key: vec![],
         tags_value: vec![],
-        metric_type: payload.r#type.to_string(),
+        metric_type: payload.r#type.clone(),
         set_values: vec![],
         count_value: 0.0,
         distribution_values: vec![],
@@ -133,33 +121,33 @@ pub fn newMetricsOut(payload: &MetricsInPayload) -> MetricsOutPayload {
     out.tags_key = payload
         .tags
         .keys()
-        .map(|tag| rand::thread_rng().gen())
+        .map(|_tag| rand::thread_rng().gen())
         .collect();
     out.tags_value = payload
         .tags
         .values()
-        .map(|tag| rand::thread_rng().gen())
+        .map(|_tag| rand::thread_rng().gen())
         .collect();
 
     let value = &payload.value;
-
+    let tmp_vec = vec![0.0_f64];
     match &payload.r#type {
-        MetricType::c => {
+        MetricType::C => {
             out.count_value = match value {
                 MetricValue::Float(v) => *v,
                 _ => 1.0,
             }
         }
-        MetricType::d => {
+        MetricType::D => {
             out.distribution_values = match value {
                 Vector(v) => v,
-                _ => &vec![0.0_f64],
+                _ => &tmp_vec,
             }
             .to_owned()
         }
-        MetricType::s => {
+        MetricType::S => {
             out.set_values = match value {
-                Vector(v) => *v.iter().map(|v| *v as u64).collect(),
+                //Vector(v) => *v.iter().map(|v| *v as u64).collect::<u64>(),
                 _ => {
                     vec![1_u64]
                 }
@@ -181,7 +169,7 @@ fn deserialize_incoming(payload: &str) -> MetricsInPayload {
                 project_id: 1,
                 name: String::from("fail"),
                 unit: String::from("fail"),
-                r#type: MetricType::c,
+                r#type: MetricType::C,
                 value: MetricValue::Float(4.2069),
                 timestamp: 1234,
                 tags: HashMap::new(),
@@ -191,17 +179,19 @@ fn deserialize_incoming(payload: &str) -> MetricsInPayload {
     return out;
 }
 
-async fn consume_and_produce(
+async fn consume_and_batch(
     brokers: &str,
     group_id: &str,
     source_topic: &str,
-    dest_topic: &str,
     batch_size: usize,
+    clickhouse_host: &str,
+    clickhouse_port: u16,
+    clickhouse_table: &str,
 ) {
     let context = CustomContext {};
     let mut batch = Vec::new();
 
-    let consumer: LoggingConsumer = ClientConfig::new()
+    let consumer: MetricsConsumer = ClientConfig::new()
         .set("group.id", group_id)
         .set("bootstrap.servers", brokers)
         .set("enable.partition.eof", "false")
@@ -217,15 +207,12 @@ async fn consume_and_produce(
         .subscribe(&[source_topic])
         .expect("Can't subscribe to specified topics");
 
-    let producer: FutureProducer = ClientConfig::new()
-        .set("bootstrap.servers", brokers)
-        .set("message.timeout.ms", "5000")
-        .create()
-        .expect("couldn't create producer");
-    info!(
-        "Beginning poll {:?}",
-        vec![brokers, group_id, source_topic, dest_topic]
+    let client = clickhouse_client::new(
+        clickhouse_host.to_string(),
+        clickhouse_port,
+        clickhouse_table.to_string(),
     );
+
     let mut last_batch_flush = SystemTime::now();
     loop {
         match timeout(Duration::from_secs(2), consumer.recv()).await {
@@ -242,10 +229,9 @@ async fn consume_and_produce(
                                 ""
                             }
                         };
-                        // this is only a pointer clone, it doesn't clone tha underlying producer
-                        let tmp_producer = producer.clone();
+
                         let deserialized_input = deserialize_incoming(&payload_str);
-                        let metrics_out = newMetricsOut(&deserialized_input);
+                        let metrics_out = new_metrics_out(&deserialized_input);
                         batch.push(metrics_out);
 
                         if batch.len() > batch_size
@@ -256,15 +242,36 @@ async fn consume_and_produce(
                             // TODO: make batch flush time an arg
                             > 1
                         {
-                            flush_batch(&consumer, &mut batch, String::from(source_topic)).await;
+                            match client.send(serde_json::to_string(&batch).unwrap()).await {
+                                Ok(response) => {
+                                    info!("Successfully sent data: {:?}", response);
+                                }
+                                Err(e) => {
+                                    error!("Error while sending data: {:?}", e);
+                                }
+                            }
                             last_batch_flush = SystemTime::now();
+                            batch.clear();
                         }
                     }
                 }
             }
             Err(_) => {
-                error!("timeoout, flushing batch");
-                flush_batch(&consumer, &mut batch, String::from(source_topic)).await;
+                error!("timeout, flushing batch");
+
+                if !batch.is_empty() {
+                    match client.send(serde_json::to_string(&batch).unwrap()).await {
+                        Ok(response) => {
+                            info!("Successfully sent data: {:?}", response);
+                        }
+                        Err(e) => {
+                            error!("Error while sending data: {:?}", e);
+                        }
+                    }
+                    last_batch_flush = SystemTime::now();
+                }
+
+                batch.clear();
             }
         }
     }
@@ -272,9 +279,9 @@ async fn consume_and_produce(
 
 #[tokio::main]
 async fn main() {
-    let matches = App::new("consumer example")
+    let matches = App::new("clickhouse consumer")
         .version(option_env!("CARGO_PKG_VERSION").unwrap_or(""))
-        .about("Simple command line consumer")
+        .about("Consumer which writes to clickhouse")
         .arg(
             Arg::with_name("brokers")
                 .short("b")
@@ -318,6 +325,27 @@ async fn main() {
                 .default_value("10")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("clickhouse-client")
+                .long("clickhouse-client")
+                .help("clickhouse client to connect to")
+                .default_value("localhost")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("clickhouse-port")
+                .long("clickhouse-port")
+                .help("clickhouse port to connect to")
+                .default_value("8123")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("clickhouse-table")
+                .long("clickhouse-table")
+                .help("clickhouse table to write to")
+                .default_value("metrics_raw_v2_local")
+                .takes_value(true),
+        )
         .get_matches();
 
     let (version_n, version_s) = get_rdkafka_version();
@@ -327,21 +355,40 @@ async fn main() {
     let source_topic = matches.value_of("source-topic").unwrap();
     let brokers = matches.value_of("brokers").unwrap();
     let group_id = matches.value_of("group-id").unwrap();
-    let dest_topic = matches.value_of("dest-topic").unwrap();
     let batch_size = matches
         .value_of("batch-size")
         .unwrap()
         .parse::<usize>()
         .unwrap();
-    consume_and_produce(brokers, group_id, source_topic, dest_topic, batch_size).await;
+    let clickhouse_host = matches.value_of("clickhouse-host").unwrap();
+    let clickhouse_port = matches
+        .value_of("clickhouse-port")
+        .unwrap()
+        .parse::<u16>()
+        .unwrap();
+    let clickhouse_table = matches.value_of("clickhouse-table").unwrap();
+    //let client = clickhouse_client::new(clickhouse_host.to_string(), clikhouse_port, clickhouse_table.to_string());
+    consume_and_batch(
+        brokers,
+        group_id,
+        source_topic,
+        batch_size,
+        clickhouse_host,
+        clickhouse_port,
+        clickhouse_table,
+    )
+    .await;
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::MetricsOutPayload;
+    use crate::{MetricType, MetricsOutPayload};
+    use rust_arroyo::utils::clickhouse_client;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn test_clickhouse_write() {
-        let row = MetricsOutPayload {
+    #[test]
+    fn test_serialization_metrics_container() {
+        let row1 = MetricsOutPayload {
             use_case_id: "a".parse().unwrap(),
             org_id: 1,
             project_id: 1,
@@ -349,7 +396,7 @@ mod tests {
             timestamp: 1656401964,
             tags_key: vec![1],
             tags_value: vec![1],
-            metric_type: "c".parse().unwrap(),
+            metric_type: MetricType::C,
             set_values: vec![],
             count_value: 1_f64,
             distribution_values: vec![],
@@ -359,16 +406,132 @@ mod tests {
             offset: 1,
         };
 
-        let client = reqwest::Client::new();
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("Connection", "keep-alive".parse().unwrap());
-        headers.insert("Accept-Encoding", "gzip,deflate".parse().unwrap());
+        let row2 = MetricsOutPayload {
+            use_case_id: "b".parse().unwrap(),
+            org_id: 1,
+            project_id: 1,
+            metric_id: 1,
+            timestamp: 1656401964,
+            tags_key: vec![1],
+            tags_value: vec![1],
+            metric_type: MetricType::C,
+            set_values: vec![],
+            count_value: 1_f64,
+            distribution_values: vec![],
+            materialization_version: 1,
+            retention_days: 90,
+            partition: 1,
+            offset: 1,
+        };
 
+        let metric_container = vec![row1, row2];
+        let result = serde_json::to_string(&metric_container).unwrap();
+        println!("{:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_clickhouse_write_one_row() {
+        let row = MetricsOutPayload {
+            use_case_id: "a".parse().unwrap(),
+            org_id: 1,
+            project_id: 1,
+            metric_id: 1,
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            tags_key: vec![1],
+            tags_value: vec![1],
+            metric_type: MetricType::C,
+            set_values: vec![],
+            count_value: 1_f64,
+            distribution_values: vec![],
+            materialization_version: 1,
+            retention_days: 90,
+            partition: 1,
+            offset: 1,
+        };
+
+        let client = clickhouse_client::new(
+            "localhost".to_string(),
+            8123,
+            "metrics_raw_v2_local".to_string(),
+        );
         let res = client
-            .post("http://localhost:8123/post")
-            .body("the exact body that is sent")
-            .headers(headers)
-            .send()
-            .await?;
+            .send(serde_json::to_string::<MetricsOutPayload>(&row).unwrap())
+            .await;
+
+        match res {
+            Ok(res) => {
+                println!("{:?}", res);
+            }
+            Err(e) => {
+                println!("{:?}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_clickhouse_write_container() {
+        let row1 = MetricsOutPayload {
+            use_case_id: "b".parse().unwrap(),
+            org_id: 1,
+            project_id: 1,
+            metric_id: 1,
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            tags_key: vec![1],
+            tags_value: vec![1],
+            metric_type: MetricType::C,
+            set_values: vec![],
+            count_value: 1_f64,
+            distribution_values: vec![],
+            materialization_version: 1,
+            retention_days: 90,
+            partition: 1,
+            offset: 1,
+        };
+
+        let row2 = MetricsOutPayload {
+            use_case_id: "c".parse().unwrap(),
+            org_id: 1,
+            project_id: 1,
+            metric_id: 1,
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            tags_key: vec![1],
+            tags_value: vec![1],
+            metric_type: MetricType::C,
+            set_values: vec![],
+            count_value: 1_f64,
+            distribution_values: vec![],
+            materialization_version: 1,
+            retention_days: 90,
+            partition: 1,
+            offset: 1,
+        };
+
+        let metric_container = vec![row1, row2];
+        let body = serde_json::to_string(&metric_container).unwrap();
+
+        let client = clickhouse_client::new(
+            "localhost".to_string(),
+            8123,
+            "metrics_raw_v2_local".to_string(),
+        );
+        let res = client.send(body).await;
+
+        match res {
+            Ok(res) => {
+                println!("{:?}", res);
+            }
+            Err(e) => {
+                println!("{:?}", e);
+            }
+        }
     }
 }
