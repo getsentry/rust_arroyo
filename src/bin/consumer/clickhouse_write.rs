@@ -147,20 +147,19 @@ pub fn new_metrics_out(payload: &MetricsInPayload) -> MetricsOutPayload {
         }
         MetricType::S => {
             out.set_values = match value {
-                //Vector(v) => *v.iter().map(|v| *v as u64).collect::<u64>(),
+                Vector(v) => v.iter().map(|v| *v as u64).collect(),
                 _ => {
                     vec![1_u64]
                 }
             }
-            .to_owned()
         }
     }
 
-    return out;
+    out
 }
 
 fn deserialize_incoming(payload: &str) -> MetricsInPayload {
-    let out = match serde_json::from_str::<MetricsInPayload>(&payload) {
+    let out = match serde_json::from_str::<MetricsInPayload>(payload) {
         Ok(p) => p,
         Err(e) => {
             error!("Could not parse payload! {:?}, {:?}", payload, e);
@@ -176,7 +175,8 @@ fn deserialize_incoming(payload: &str) -> MetricsInPayload {
             }
         }
     };
-    return out;
+
+    out
 }
 
 async fn consume_and_batch(
@@ -230,7 +230,7 @@ async fn consume_and_batch(
                             }
                         };
 
-                        let deserialized_input = deserialize_incoming(&payload_str);
+                        let deserialized_input = deserialize_incoming(payload_str);
                         let metrics_out = new_metrics_out(&deserialized_input);
                         batch.push(metrics_out);
 
