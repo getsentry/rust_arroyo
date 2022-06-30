@@ -13,6 +13,7 @@ use rdkafka::message::Message;
 use rdkafka::topic_partition_list::TopicPartitionList;
 use rdkafka::util::get_rdkafka_version;
 use rust_arroyo::utils::clickhouse_client;
+use rust_arroyo::utils::clickhouse_client::ClickhouseClient;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -42,11 +43,8 @@ type MetricsConsumer = StreamConsumer<CustomContext>;
 
 #[derive(strum_macros::Display, Deserialize, Serialize, Debug, Clone)]
 enum MetricType {
-    #[serde(rename = "c")]
     C,
-    #[serde(rename = "d")]
     D,
-    #[serde(rename = "s")]
     S,
 }
 
@@ -184,9 +182,7 @@ async fn consume_and_batch(
     group_id: &str,
     source_topic: &str,
     batch_size: usize,
-    clickhouse_host: &str,
-    clickhouse_port: u16,
-    clickhouse_table: &str,
+    client: ClickhouseClient,
 ) {
     let context = CustomContext {};
     let mut batch = Vec::new();
@@ -197,7 +193,6 @@ async fn consume_and_batch(
         .set("enable.partition.eof", "false")
         .set("session.timeout.ms", "6000")
         .set("enable.auto.commit", "false")
-        //.set("statistics.interval.ms", "30000")
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Warning)
         .create_with_context(context)
@@ -206,12 +201,6 @@ async fn consume_and_batch(
     consumer
         .subscribe(&[source_topic])
         .expect("Can't subscribe to specified topics");
-
-    let client = clickhouse_client::new(
-        clickhouse_host.to_string(),
-        clickhouse_port,
-        clickhouse_table.to_string(),
-    );
 
     let mut last_batch_flush = SystemTime::now();
     loop {
@@ -367,27 +356,26 @@ async fn main() {
         .parse::<u16>()
         .unwrap();
     let clickhouse_table = matches.value_of("clickhouse-table").unwrap();
-    //let client = clickhouse_client::new(clickhouse_host.to_string(), clikhouse_port, clickhouse_table.to_string());
-    consume_and_batch(
-        brokers,
-        group_id,
-        source_topic,
-        batch_size,
-        clickhouse_host,
+    let client = clickhouse_client::new(
+        clickhouse_host.to_string(),
         clickhouse_port,
-        clickhouse_table,
-    )
-    .await;
+        clickhouse_table.to_string(),
+    );
+    consume_and_batch(brokers, group_id, source_topic, batch_size, client).await;
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{MetricType, MetricsOutPayload};
+    use crate::{
+        deserialize_incoming, new_metrics_out, MetricType, MetricValue, MetricsInPayload,
+        MetricsOutPayload,
+    };
     use rust_arroyo::utils::clickhouse_client;
+    use std::collections::HashMap;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn test_serialization_metrics_container() {
+    fn test_serialization_metrics_out_vector() {
         let row1 = MetricsOutPayload {
             use_case_id: "a".parse().unwrap(),
             org_id: 1,
@@ -425,7 +413,8 @@ mod tests {
         };
 
         let metric_container = vec![row1, row2];
-        let result = serde_json::to_string(&metric_container).unwrap();
+        let result = serde_json::to_string(&metric_container);
+        assert!(result.is_ok());
         println!("{:?}", result);
     }
 
@@ -461,9 +450,10 @@ mod tests {
             .send(serde_json::to_string::<MetricsOutPayload>(&row).unwrap())
             .await;
 
+        assert!(res.is_ok());
         match res {
             Ok(res) => {
-                println!("{:?}", res);
+                assert_eq!(res.status(), 200);
             }
             Err(e) => {
                 println!("{:?}", e);
@@ -524,10 +514,64 @@ mod tests {
             "metrics_raw_v2_local".to_string(),
         );
         let res = client.send(body).await;
+        assert!(res.is_ok());
 
         match res {
             Ok(res) => {
-                println!("{:?}", res);
+                assert_eq!(res.status(), 200);
+            }
+            Err(e) => {
+                println!("{:?}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_integration() {
+        env_logger::init();
+        let mut init_metrics_in = MetricsInPayload {
+            org_id: 1,
+            project_id: 1,
+            name: "sentry.sessions.session.duration".to_string(),
+            unit: "S".to_string(),
+            r#type: MetricType::D,
+            value: MetricValue::Vector(vec![
+                948.7285023840417,
+                229.7264210041775,
+                855.1960305024135,
+                475.592711958219,
+                825.5422355278084,
+                916.3170826715101,
+            ]),
+            timestamp: 1655940182,
+            tags: HashMap::new(),
+        };
+        init_metrics_in
+            .tags
+            .insert("environment".to_string(), "env-1".to_string());
+        init_metrics_in
+            .tags
+            .insert("release".to_string(), "v1.1.1".to_string());
+        init_metrics_in
+            .tags
+            .insert("session.status".to_string(), "exited".to_string());
+        let payload = serde_json::to_string(&init_metrics_in).unwrap();
+        let metrics_in = deserialize_incoming(&payload);
+        let metrics_out = new_metrics_out(&metrics_in);
+
+        let client = clickhouse_client::new(
+            "localhost".to_string(),
+            8123,
+            "metrics_raw_v2_local".to_string(),
+        );
+        let res = client
+            .send(serde_json::to_string::<MetricsOutPayload>(&metrics_out).unwrap())
+            .await;
+        assert!(res.is_ok());
+
+        match res {
+            Ok(res) => {
+                assert_eq!(res.status(), 200);
             }
             Err(e) => {
                 println!("{:?}", e);
