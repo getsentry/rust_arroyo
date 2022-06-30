@@ -7,15 +7,17 @@ use rand::Rng;
 use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::{Consumer, ConsumerContext, Rebalance};
+use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
 use rdkafka::message::Message;
 use rdkafka::topic_partition_list::TopicPartitionList;
 use rdkafka::util::get_rdkafka_version;
+use rdkafka::Offset;
 use rust_arroyo::utils::clickhouse_client;
 use rust_arroyo::utils::clickhouse_client::ClickhouseClient;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::mem;
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::time::timeout;
@@ -180,6 +182,19 @@ fn deserialize_incoming(payload: &str) -> MetricsInPayload {
     out
 }
 
+fn commit_offsets(
+    consumer: &mut MetricsConsumer,
+    topic: String,
+    offsets_to_commit: HashMap<i32, u64>,
+) {
+    let topic_map = offsets_to_commit
+        .iter()
+        .map(|(k, v)| ((topic.clone(), *k), Offset::from_raw((*v + 1) as i64)))
+        .collect();
+    let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
+    consumer.commit(&partition_list, CommitMode::Sync).unwrap();
+}
+
 async fn consume_and_batch(
     brokers: &str,
     group_id: &str,
@@ -188,9 +203,9 @@ async fn consume_and_batch(
     client: ClickhouseClient,
 ) {
     let context = CustomContext {};
-    let mut batch = Vec::new();
+    let mut metrics_out_batch = Vec::new();
 
-    let consumer: MetricsConsumer = ClientConfig::new()
+    let mut consumer: MetricsConsumer = ClientConfig::new()
         .set("group.id", group_id)
         .set("bootstrap.servers", brokers)
         .set("enable.partition.eof", "false")
@@ -205,7 +220,9 @@ async fn consume_and_batch(
         .subscribe(&[source_topic])
         .expect("Can't subscribe to specified topics");
 
+    let mut last_offsets: HashMap<i32, u64> = HashMap::new();
     let mut last_batch_flush = SystemTime::now();
+
     loop {
         match timeout(Duration::from_secs(2), consumer.recv()).await {
             Ok(result) => {
@@ -224,9 +241,10 @@ async fn consume_and_batch(
 
                         let deserialized_input = deserialize_incoming(payload_str);
                         let metrics_out = new_metrics_out(&deserialized_input);
-                        batch.push(metrics_out);
+                        metrics_out_batch.push(metrics_out);
+                        last_offsets.insert(m_clone.partition(), m_clone.offset() as u64);
 
-                        if batch.len() > batch_size
+                        if metrics_out_batch.len() > batch_size
                             || SystemTime::now()
                             .duration_since(last_batch_flush)
                             .unwrap()
@@ -234,7 +252,10 @@ async fn consume_and_batch(
                             // TODO: make batch flush time an arg
                             > 1
                         {
-                            match client.send(serde_json::to_string(&batch).unwrap()).await {
+                            match client
+                                .send(serde_json::to_string(&metrics_out_batch).unwrap())
+                                .await
+                            {
                                 Ok(response) => {
                                     info!("Successfully sent data: {:?}", response);
                                 }
@@ -242,8 +263,16 @@ async fn consume_and_batch(
                                     error!("Error while sending data: {:?}", e);
                                 }
                             }
+
+                            let offsets_to_commit = mem::take(&mut last_offsets);
+                            commit_offsets(
+                                &mut consumer,
+                                source_topic.to_string(),
+                                offsets_to_commit,
+                            );
                             last_batch_flush = SystemTime::now();
-                            batch.clear();
+
+                            metrics_out_batch.clear();
                         }
                     }
                 }
@@ -251,8 +280,11 @@ async fn consume_and_batch(
             Err(_) => {
                 error!("timeout, flushing batch");
 
-                if !batch.is_empty() {
-                    match client.send(serde_json::to_string(&batch).unwrap()).await {
+                if !metrics_out_batch.is_empty() {
+                    match client
+                        .send(serde_json::to_string(&metrics_out_batch).unwrap())
+                        .await
+                    {
                         Ok(response) => {
                             info!("Successfully sent data: {:?}", response);
                         }
@@ -260,10 +292,11 @@ async fn consume_and_batch(
                             error!("Error while sending data: {:?}", e);
                         }
                     }
+                    let offsets_to_commit = mem::take(&mut last_offsets);
+                    commit_offsets(&mut consumer, source_topic.to_string(), offsets_to_commit);
+                    metrics_out_batch.clear();
                     last_batch_flush = SystemTime::now();
                 }
-
-                batch.clear();
             }
         }
     }
