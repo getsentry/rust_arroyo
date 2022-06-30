@@ -43,8 +43,11 @@ type MetricsConsumer = StreamConsumer<CustomContext>;
 
 #[derive(strum_macros::Display, Deserialize, Serialize, Debug, Clone)]
 enum MetricType {
+    #[serde(rename = "c")]
     C,
+    #[serde(rename = "d")]
     D,
+    #[serde(rename = "s")]
     S,
 }
 
