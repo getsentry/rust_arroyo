@@ -315,9 +315,9 @@ async fn main() {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("clickhouse-client")
-                .long("clickhouse-client")
-                .help("clickhouse client to connect to")
+            Arg::with_name("clickhouse-host")
+                .long("clickhouse-host")
+                .help("clickhouse host to connect to")
                 .default_value("localhost")
                 .takes_value(true),
         )

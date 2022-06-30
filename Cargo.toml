@@ -39,7 +39,7 @@ name = "noop-consumer"
 path = "src/bin/consumer/noop.rs"
 
 [[bin]]
-name = "storage-writer"
+name = "clickhouse-writer"
 path = "src/bin/consumer/clickhouse_writer.rs"
 
 [[bin]]
