@@ -1,8 +1,7 @@
 use futures::future::{try_join_all, Future};
 use log::info;
 use rdkafka::client::ClientContext;
-use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
+use rdkafka::consumer::{ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
 use rdkafka::message::Message;
 use rdkafka::message::OwnedMessage;
@@ -40,17 +39,15 @@ pub struct AsyncNoopCommit {
     pub source_topic: String,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn process_message(
     message: OwnedMessage,
     producer: &FutureProducer,
-    consumer: &StreamConsumer<CustomContext>,
     batch: &mut FutureBatch<dyn Future<Output = OwnedDeliveryResult>>,
     last_batch_flush: SystemTime,
     batch_size: usize,
     dest_topic: String,
     source_topic: String,
-) -> bool {
+) -> Option<TopicPartitionList> {
     let tmp_producer = producer.clone();
     let msg_clone = message;
     batch.push(Box::pin(async move {
@@ -71,20 +68,18 @@ pub async fn process_message(
             // TODO: make batch flush time an arg
             > 1
     {
-        flush_batch(consumer, batch, source_topic).await;
-        return true;
+        return flush_batch(batch, source_topic).await;
     }
-    false
+    None
 }
 
-async fn flush_batch(
-    consumer: &StreamConsumer<CustomContext>,
+pub async fn flush_batch(
     batch: &mut FutureBatch<dyn Future<Output = OwnedDeliveryResult>>,
     source_topic: String,
-) {
+) -> Option<TopicPartitionList> {
     if batch.is_empty() {
         println!("batch is empty, nothing to flush");
-        return;
+        return None;
     }
     let results = try_join_all(batch.iter_mut()).await;
     match results {
@@ -108,9 +103,8 @@ async fn flush_batch(
                 .map(|(k, v)| ((String::from(k.0), k.1), Offset::from_raw(*v + 1)))
                 .collect();
             let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-            consumer.commit(&partition_list, CommitMode::Sync).unwrap();
-            info!("Committed: {:?}", topic_map);
+            batch.clear();
+            Some(partition_list)
         }
     }
-    batch.clear();
 }

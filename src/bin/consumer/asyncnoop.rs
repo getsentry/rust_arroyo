@@ -2,11 +2,12 @@ use clap::{App, Arg};
 use log::{debug, error, info};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
+use rdkafka::consumer::CommitMode;
 use rdkafka::consumer::Consumer;
 use rdkafka::producer::FutureProducer;
 use rdkafka::util::get_rdkafka_version;
-use rust_arroyo::processing::strategies::async_noop::process_message;
 use rust_arroyo::processing::strategies::async_noop::CustomContext;
+use rust_arroyo::processing::strategies::async_noop::{flush_batch, process_message};
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::time::timeout;
@@ -58,7 +59,6 @@ async fn consume_and_produce(
                     match process_message(
                         m.detach(),
                         &producer,
-                        &consumer,
                         &mut batch,
                         last_batch_flush,
                         batch_size,
@@ -67,15 +67,25 @@ async fn consume_and_produce(
                     )
                     .await
                     {
-                        true => {
+                        Some(partition_list) => {
+                            consumer.commit(&partition_list, CommitMode::Sync).unwrap();
                             last_batch_flush = SystemTime::now();
+                            info!("Committed: {:?}", partition_list);
                         }
-                        false => {}
+                        None => {}
                     }
                 }
             },
             Err(_) => {
                 error!("timeoout, flushing batch");
+                match flush_batch(&mut batch, source_topic.to_string()).await {
+                    Some(partition_list) => {
+                        consumer.commit(&partition_list, CommitMode::Sync).unwrap();
+                        last_batch_flush = SystemTime::now();
+                        info!("Committed: {:?}", partition_list);
+                    }
+                    None => {}
+                }
             }
         }
     }
