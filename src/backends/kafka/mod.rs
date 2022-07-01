@@ -287,7 +287,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
 
         let consumer = self.consumer.as_mut().unwrap();
         let partitions = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-        let _ = consumer.commit(&partitions, CommitMode::Sync).unwrap();
+        consumer.commit(&partitions, CommitMode::Sync).unwrap();
 
         // Clear staged offsets
         let cleared_map = HashMap::new();
@@ -311,13 +311,11 @@ mod tests {
     use super::{AssignmentCallbacks, KafkaConsumer};
     use crate::backends::kafka::config::KafkaConfig;
     use crate::backends::Consumer;
-    use crate::types::{Partition, Position, Topic};
-    use chrono::Utc;
+    use crate::types::{Partition, Topic};
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::config::ClientConfig;
     use std::collections::HashMap;
-    use std::thread::sleep;
     use std::time::Duration;
 
     struct EmptyCallbacks {}
@@ -400,53 +398,6 @@ mod tests {
         consumer.unsubscribe().unwrap();
         consumer.close();
 
-        delete_topic("test").await;
-    }
-
-    #[tokio::test]
-    async fn test_commit() {
-        create_topic("test", 1).await;
-
-        let configuration = KafkaConfig::new_consumer_config(
-            vec!["localhost:9092".to_string()],
-            "my-group-2".to_string(),
-            "latest".to_string(),
-            false,
-            None,
-        );
-
-        let mut consumer = KafkaConsumer::new(configuration);
-        let topic = Topic {
-            name: "test".to_string(),
-        };
-
-        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
-        consumer.subscribe(&[topic.clone()], my_callbacks).unwrap();
-
-        let positions = HashMap::from([(
-            Partition { topic, index: 0 },
-            Position {
-                offset: 100,
-                timestamp: Utc::now(),
-            },
-        )]);
-
-        consumer.stage_positions(positions.clone()).unwrap();
-
-        // Wait until the consumer got an assignment
-        for _ in 0..10 {
-            consumer.poll(Some(Duration::from_millis(5_000))).unwrap();
-            if consumer.tell().unwrap().len() == 1 {
-                println!("Received assignment");
-                break;
-            }
-            sleep(Duration::from_millis(200));
-        }
-
-        let res = consumer.commit_positions().unwrap();
-        assert_eq!(res, positions);
-        consumer.unsubscribe().unwrap();
-        consumer.close();
         delete_topic("test").await;
     }
 

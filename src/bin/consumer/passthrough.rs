@@ -1,4 +1,5 @@
 use clap::{App, Arg};
+use futures::executor::block_on;
 use futures::future::{try_join_all, Future};
 use log::{debug, error, info};
 use rdkafka::client::ClientContext;
@@ -157,8 +158,7 @@ async fn consume_and_produce(
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let matches = App::new("consumer example")
         .version(option_env!("CARGO_PKG_VERSION").unwrap_or(""))
         .about("Simple command line consumer")
@@ -220,5 +220,11 @@ async fn main() {
         .unwrap()
         .parse::<usize>()
         .unwrap();
-    consume_and_produce(brokers, group_id, source_topic, dest_topic, batch_size).await;
+    block_on(consume_and_produce(
+        brokers,
+        group_id,
+        source_topic,
+        dest_topic,
+        batch_size,
+    ));
 }
