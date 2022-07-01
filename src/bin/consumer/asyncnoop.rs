@@ -1,83 +1,18 @@
 use clap::{App, Arg};
-use futures::future::{try_join_all, Future};
 use log::{debug, error, info};
-use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
-use rdkafka::error::KafkaResult;
-use rdkafka::message::Message;
-use rdkafka::producer::future_producer::OwnedDeliveryResult;
-use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
+use rdkafka::consumer::Consumer;
+use rdkafka::producer::FutureProducer;
 use rdkafka::util::get_rdkafka_version;
-use std::boxed::Box;
-use std::cmp::max;
-use std::collections::HashMap;
-use std::pin::Pin;
+use rust_arroyo::processing::strategies::async_noop::process_message;
+use rust_arroyo::processing::strategies::async_noop::CustomContext;
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::time::timeout;
 
-struct CustomContext;
-
-impl ClientContext for CustomContext {}
-
-impl ConsumerContext for CustomContext {
-    fn pre_rebalance(&self, rebalance: &Rebalance) {
-        info!("Pre rebalance {:?}", rebalance);
-    }
-
-    fn post_rebalance(&self, rebalance: &Rebalance) {
-        info!("Post rebalance {:?}", rebalance);
-    }
-
-    fn commit_callback(&self, result: KafkaResult<()>, _offsets: &TopicPartitionList) {
-        info!("Committing offsets: {:?}", result);
-    }
-}
-
 // A type alias with your custom consumer can be created for convenience.
 type LoggingConsumer = StreamConsumer<CustomContext>;
-type FutureBatch<T> = Vec<Pin<Box<T>>>;
-
-async fn flush_batch(
-    consumer: &LoggingConsumer,
-    batch: &mut FutureBatch<impl Future<Output = OwnedDeliveryResult>>,
-    source_topic: String,
-) {
-    if batch.is_empty() {
-        println!("batch is empty, nothing to flush");
-        return;
-    }
-    let results = try_join_all(batch.iter_mut()).await;
-    match results {
-        Err(e) => panic!("{:?}", e),
-        Ok(result_vec) => {
-            let mut positions: HashMap<(&str, i32), i64> = HashMap::new();
-            for (partition, position) in result_vec.iter() {
-                let offset_to_commit = match positions.get_mut(&(source_topic.as_str(), *partition))
-                {
-                    None => *position,
-                    Some(v) => max(*v, *position),
-                };
-                match positions.insert((source_topic.as_str(), *partition), offset_to_commit) {
-                    Some(_) => {}
-                    None => {}
-                };
-            }
-
-            let topic_map = positions
-                .iter()
-                .map(|(k, v)| ((String::from(k.0), k.1), Offset::from_raw(*v + 1)))
-                .collect();
-            let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-            consumer.commit(&partition_list, CommitMode::Sync).unwrap();
-            info!("Committed: {:?}", topic_map);
-        }
-    }
-    batch.clear();
-}
 
 async fn consume_and_produce(
     brokers: &str,
@@ -87,7 +22,6 @@ async fn consume_and_produce(
     batch_size: usize,
 ) {
     let context = CustomContext {};
-    let mut batch = Vec::new();
 
     let consumer: LoggingConsumer = ClientConfig::new()
         .set("group.id", group_id)
@@ -114,44 +48,34 @@ async fn consume_and_produce(
         "Beginning poll {:?}",
         vec![brokers, group_id, source_topic, dest_topic]
     );
+    let mut batch = Vec::new();
     let mut last_batch_flush = SystemTime::now();
     loop {
         match timeout(Duration::from_secs(2), consumer.recv()).await {
-            Ok(result) => {
-                match result {
-                    Err(e) => panic!("Kafka error: {}", e),
-                    Ok(m) => {
-                        let payload_clone = m.detach();
-                        // this is only a pointer clone, it doesn't clone tha underlying producer
-                        let tmp_producer = producer.clone();
-
-                        batch.push(Box::pin(async move {
-                            return tmp_producer
-                                .send(
-                                    FutureRecord::to(dest_topic)
-                                        .payload(payload_clone.payload().unwrap())
-                                        .key("None"),
-                                    Duration::from_secs(0),
-                                )
-                                .await;
-                        }));
-                        if batch.len() > batch_size
-                            || SystemTime::now()
-                                .duration_since(last_batch_flush)
-                                .unwrap()
-                                .as_secs()
-                                // TODO: make batch flush time an arg
-                                > 1
-                        {
-                            flush_batch(&consumer, &mut batch, String::from(source_topic)).await;
+            Ok(result) => match result {
+                Err(e) => panic!("Kafka error: {}", e),
+                Ok(m) => {
+                    match process_message(
+                        m.detach(),
+                        &producer,
+                        &consumer,
+                        &mut batch,
+                        last_batch_flush,
+                        batch_size,
+                        dest_topic.to_string(),
+                        source_topic.to_string(),
+                    )
+                    .await
+                    {
+                        true => {
                             last_batch_flush = SystemTime::now();
                         }
+                        false => {}
                     }
                 }
-            }
+            },
             Err(_) => {
                 error!("timeoout, flushing batch");
-                flush_batch(&consumer, &mut batch, String::from(source_topic)).await;
             }
         }
     }

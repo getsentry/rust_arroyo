@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::time::Duration;
 
+pub mod async_noop;
 pub mod noop;
 pub mod transform;
 
