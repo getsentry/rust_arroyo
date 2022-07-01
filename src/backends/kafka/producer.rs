@@ -74,8 +74,8 @@ mod tests {
     use crate::backends::kafka::types::KafkaPayload;
     use crate::backends::Producer;
     use crate::types::{Topic, TopicOrPartition};
-    #[test]
-    fn test_producer() {
+    #[tokio::test]
+    async fn test_producer() {
         let topic = Topic {
             name: "test".to_string(),
         };
@@ -90,7 +90,7 @@ mod tests {
             headers: None,
             payload: Some("asdf".as_bytes().to_vec()),
         };
-        producer.produce(&destination, &payload);
+        producer.produce(&destination, &payload).await;
         producer.close();
     }
 }
