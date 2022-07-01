@@ -127,7 +127,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
                 Some(_) => return Err(RunError::InvalidState),
             },
             Some(strategy) => {
-                let commit_request = strategy.poll();
+                let commit_request = strategy.poll().await;
                 match commit_request {
                     None => {}
                     Some(request) => {
@@ -141,7 +141,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
 
                 let msg = replace(&mut self.message, None);
                 if let Some(msg_s) = msg {
-                    let ret = strategy.submit(msg_s);
+                    let ret = strategy.submit(msg_s).await;
                     match ret {
                         Ok(()) => {}
                         Err(_) => {
@@ -214,15 +214,17 @@ mod tests {
         CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
     };
     use crate::types::{Message, Position};
+    use async_trait::async_trait;
     use std::collections::HashMap;
     use std::time::Duration;
 
     struct TestStrategy {
         message: Option<Message<String>>,
     }
+    #[async_trait]
     impl ProcessingStrategy<String> for TestStrategy {
         #[allow(clippy::manual_map)]
-        fn poll(&mut self) -> Option<CommitRequest> {
+        async fn poll(&mut self) -> Option<CommitRequest> {
             match self.message.as_ref() {
                 None => None,
                 Some(message) => Some(CommitRequest {
@@ -237,7 +239,7 @@ mod tests {
             }
         }
 
-        fn submit(&mut self, message: Message<String>) -> Result<(), MessageRejected> {
+        async fn submit(&mut self, message: Message<String>) -> Result<(), MessageRejected> {
             self.message = Some(message);
             Ok(())
         }

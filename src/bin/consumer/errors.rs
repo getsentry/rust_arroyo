@@ -1,8 +1,8 @@
 extern crate rust_arroyo;
 
 use crate::rust_arroyo::backends::Producer;
+use async_trait::async_trait;
 use clap::{App, Arg};
-use futures::executor::block_on;
 use log::debug;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::producer::KafkaProducer;
@@ -27,13 +27,16 @@ struct Next {
     destination: TopicOrPartition,
     producer: KafkaProducer,
 }
+#[async_trait]
 impl ProcessingStrategy<KafkaPayload> for Next {
-    fn poll(&mut self) -> Option<CommitRequest> {
+    async fn poll(&mut self) -> Option<CommitRequest> {
         None
     }
 
-    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
-        block_on(self.producer.produce(&self.destination, &message.payload));
+    async fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
+        self.producer
+            .produce(&self.destination, &message.payload)
+            .await;
         debug!("Produced message offset {}", message.offset);
         Ok(())
     }
