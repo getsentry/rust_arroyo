@@ -6,6 +6,7 @@ use rdkafka::consumer::CommitMode;
 use rdkafka::consumer::Consumer;
 use rdkafka::producer::FutureProducer;
 use rdkafka::util::get_rdkafka_version;
+use rust_arroyo::backends::kafka::create_kafka_message;
 use rust_arroyo::processing::strategies::async_noop::AsyncNoopCommit;
 use rust_arroyo::processing::strategies::async_noop::CustomContext;
 use std::time::Duration;
@@ -63,17 +64,21 @@ async fn consume_and_produce(
         match timeout(Duration::from_secs(2), consumer.recv()).await {
             Ok(result) => match result {
                 Err(e) => panic!("Kafka error: {}", e),
-                Ok(m) => match strategy.process_message(m.detach()).await {
-                    Some(partition_list) => {
-                        consumer.commit(&partition_list, CommitMode::Sync).unwrap();
-                        info!("Committed: {:?}", partition_list);
+                Ok(m) => {
+                    match strategy.poll().await {
+                        Some(partition_list) => {
+                            consumer.commit(&partition_list, CommitMode::Sync).unwrap();
+                            info!("Committed: {:?}", partition_list);
+                        }
+                        None => {}
                     }
-                    None => {}
-                },
+
+                    strategy.submit(create_kafka_message(m)).await;
+                }
             },
             Err(_) => {
                 error!("timeoout, flushing batch");
-                match strategy.flush_batch().await {
+                match strategy.poll().await {
                     Some(partition_list) => {
                         consumer.commit(&partition_list, CommitMode::Sync).unwrap();
                         info!("Committed: {:?}", partition_list);

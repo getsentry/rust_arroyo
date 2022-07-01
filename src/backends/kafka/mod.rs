@@ -51,7 +51,7 @@ impl KafkaConsumerState {
     }
 }
 
-fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
+pub fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
     let topic = Topic {
         name: msg.topic().to_string(),
     };

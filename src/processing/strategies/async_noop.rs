@@ -1,10 +1,10 @@
+use crate::backends::kafka::types::KafkaPayload;
+use crate::types::Message;
 use futures::future::{try_join_all, Future};
 use log::info;
 use rdkafka::client::ClientContext;
 use rdkafka::consumer::{ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
-use rdkafka::message::Message;
-use rdkafka::message::OwnedMessage;
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
@@ -41,21 +41,7 @@ pub struct AsyncNoopCommit {
 }
 
 impl AsyncNoopCommit {
-    pub async fn process_message(&mut self, message: OwnedMessage) -> Option<TopicPartitionList> {
-        let tmp_producer = self.producer.clone();
-        let msg_clone = message;
-        let topic_clone = self.dest_topic.clone();
-        self.batch.push(Box::pin(async move {
-            return tmp_producer
-                .send(
-                    FutureRecord::to(&topic_clone)
-                        .payload(msg_clone.payload().unwrap())
-                        .key("None"),
-                    Duration::from_secs(0),
-                )
-                .await;
-        }));
-
+    pub async fn poll(&mut self) -> Option<TopicPartitionList> {
         if self.batch.len() > self.batch_size
             || SystemTime::now()
                 .duration_since(self.last_batch_flush)
@@ -77,7 +63,23 @@ impl AsyncNoopCommit {
         None
     }
 
-    pub async fn flush_batch(&mut self) -> Option<TopicPartitionList> {
+    pub async fn submit(&mut self, message: Message<KafkaPayload>) {
+        let tmp_producer = self.producer.clone();
+        let msg_clone = message.payload;
+        let topic_clone = self.dest_topic.clone();
+        self.batch.push(Box::pin(async move {
+            return tmp_producer
+                .send(
+                    FutureRecord::to(&topic_clone)
+                        .payload(&msg_clone.payload.unwrap())
+                        .key("None"),
+                    Duration::from_secs(0),
+                )
+                .await;
+        }));
+    }
+
+    async fn flush_batch(&mut self) -> Option<TopicPartitionList> {
         if self.batch.is_empty() {
             println!("batch is empty, nothing to flush");
             return None;
