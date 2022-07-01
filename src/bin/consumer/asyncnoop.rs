@@ -6,8 +6,8 @@ use rdkafka::consumer::CommitMode;
 use rdkafka::consumer::Consumer;
 use rdkafka::producer::FutureProducer;
 use rdkafka::util::get_rdkafka_version;
+use rust_arroyo::processing::strategies::async_noop::AsyncNoopCommit;
 use rust_arroyo::processing::strategies::async_noop::CustomContext;
-use rust_arroyo::processing::strategies::async_noop::{flush_batch, process_message};
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::time::timeout;
@@ -49,39 +49,33 @@ async fn consume_and_produce(
         "Beginning poll {:?}",
         vec![brokers, group_id, source_topic, dest_topic]
     );
-    let mut batch = Vec::new();
-    let mut last_batch_flush = SystemTime::now();
+    let batch = Vec::new();
+
+    let mut strategy = AsyncNoopCommit {
+        producer,
+        batch,
+        last_batch_flush: SystemTime::now(),
+        batch_size,
+        dest_topic: dest_topic.to_string(),
+        source_topic: source_topic.to_string(),
+    };
     loop {
         match timeout(Duration::from_secs(2), consumer.recv()).await {
             Ok(result) => match result {
                 Err(e) => panic!("Kafka error: {}", e),
-                Ok(m) => {
-                    match process_message(
-                        m.detach(),
-                        &producer,
-                        &mut batch,
-                        last_batch_flush,
-                        batch_size,
-                        dest_topic.to_string(),
-                        source_topic.to_string(),
-                    )
-                    .await
-                    {
-                        Some(partition_list) => {
-                            consumer.commit(&partition_list, CommitMode::Sync).unwrap();
-                            last_batch_flush = SystemTime::now();
-                            info!("Committed: {:?}", partition_list);
-                        }
-                        None => {}
+                Ok(m) => match strategy.process_message(m.detach()).await {
+                    Some(partition_list) => {
+                        consumer.commit(&partition_list, CommitMode::Sync).unwrap();
+                        info!("Committed: {:?}", partition_list);
                     }
-                }
+                    None => {}
+                },
             },
             Err(_) => {
                 error!("timeoout, flushing batch");
-                match flush_batch(&mut batch, source_topic.to_string()).await {
+                match strategy.flush_batch().await {
                     Some(partition_list) => {
                         consumer.commit(&partition_list, CommitMode::Sync).unwrap();
-                        last_batch_flush = SystemTime::now();
                         info!("Committed: {:?}", partition_list);
                     }
                     None => {}

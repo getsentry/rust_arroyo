@@ -32,79 +32,81 @@ impl ConsumerContext for CustomContext {
 }
 
 pub struct AsyncNoopCommit {
-    pub batch: FutureBatch<dyn Future<Output = OwnedDeliveryResult>>,
+    pub producer: FutureProducer,
     pub last_batch_flush: SystemTime,
+    pub batch: FutureBatch<dyn Future<Output = OwnedDeliveryResult>>,
     pub batch_size: usize,
     pub dest_topic: String,
     pub source_topic: String,
 }
 
-pub async fn process_message(
-    message: OwnedMessage,
-    producer: &FutureProducer,
-    batch: &mut FutureBatch<dyn Future<Output = OwnedDeliveryResult>>,
-    last_batch_flush: SystemTime,
-    batch_size: usize,
-    dest_topic: String,
-    source_topic: String,
-) -> Option<TopicPartitionList> {
-    let tmp_producer = producer.clone();
-    let msg_clone = message;
-    batch.push(Box::pin(async move {
-        return tmp_producer
-            .send(
-                FutureRecord::to(&dest_topic)
-                    .payload(msg_clone.payload().unwrap())
-                    .key("None"),
-                Duration::from_secs(0),
-            )
-            .await;
-    }));
-    if batch.len() > batch_size
-        || SystemTime::now()
-            .duration_since(last_batch_flush)
-            .unwrap()
-            .as_secs()
-            // TODO: make batch flush time an arg
-            > 1
-    {
-        return flush_batch(batch, source_topic).await;
-    }
-    None
-}
+impl AsyncNoopCommit {
+    pub async fn process_message(&mut self, message: OwnedMessage) -> Option<TopicPartitionList> {
+        let tmp_producer = self.producer.clone();
+        let msg_clone = message;
+        let topic_clone = self.dest_topic.clone();
+        self.batch.push(Box::pin(async move {
+            return tmp_producer
+                .send(
+                    FutureRecord::to(&topic_clone)
+                        .payload(msg_clone.payload().unwrap())
+                        .key("None"),
+                    Duration::from_secs(0),
+                )
+                .await;
+        }));
 
-pub async fn flush_batch(
-    batch: &mut FutureBatch<dyn Future<Output = OwnedDeliveryResult>>,
-    source_topic: String,
-) -> Option<TopicPartitionList> {
-    if batch.is_empty() {
-        println!("batch is empty, nothing to flush");
-        return None;
-    }
-    let results = try_join_all(batch.iter_mut()).await;
-    match results {
-        Err(e) => panic!("{:?}", e),
-        Ok(result_vec) => {
-            let mut positions: HashMap<(&str, i32), i64> = HashMap::new();
-            for (partition, position) in result_vec.iter() {
-                let offset_to_commit = match positions.get_mut(&(source_topic.as_str(), *partition))
-                {
-                    None => *position,
-                    Some(v) => max(*v, *position),
-                };
-                match positions.insert((source_topic.as_str(), *partition), offset_to_commit) {
-                    Some(_) => {}
-                    None => {}
-                };
+        if self.batch.len() > self.batch_size
+            || SystemTime::now()
+                .duration_since(self.last_batch_flush)
+                .unwrap()
+                .as_secs()
+                // TODO: make batch flush time an arg
+                > 1
+        {
+            match self.flush_batch().await {
+                Some(partition_list) => {
+                    self.last_batch_flush = SystemTime::now();
+                    return Some(partition_list);
+                }
+                None => {
+                    return None;
+                }
             }
+        }
+        None
+    }
 
-            let topic_map = positions
-                .iter()
-                .map(|(k, v)| ((String::from(k.0), k.1), Offset::from_raw(*v + 1)))
-                .collect();
-            let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-            batch.clear();
-            Some(partition_list)
+    pub async fn flush_batch(&mut self) -> Option<TopicPartitionList> {
+        if self.batch.is_empty() {
+            println!("batch is empty, nothing to flush");
+            return None;
+        }
+        let results = try_join_all(self.batch.iter_mut()).await;
+        match results {
+            Err(e) => panic!("{:?}", e),
+            Ok(result_vec) => {
+                let mut positions: HashMap<(&str, i32), i64> = HashMap::new();
+                for (partition, position) in result_vec.iter() {
+                    let offset_to_commit =
+                        match positions.get_mut(&(&self.source_topic, *partition)) {
+                            None => *position,
+                            Some(v) => max(*v, *position),
+                        };
+                    match positions.insert((&self.source_topic, *partition), offset_to_commit) {
+                        Some(_) => {}
+                        None => {}
+                    };
+                }
+
+                let topic_map = positions
+                    .iter()
+                    .map(|(k, v)| ((String::from(k.0), k.1), Offset::from_raw(*v + 1)))
+                    .collect();
+                let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
+                self.batch.clear();
+                Some(partition_list)
+            }
         }
     }
 }
