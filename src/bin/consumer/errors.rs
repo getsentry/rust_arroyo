@@ -2,6 +2,7 @@ extern crate rust_arroyo;
 
 use crate::rust_arroyo::backends::Producer;
 use clap::{App, Arg};
+use futures::executor::block_on;
 use log::debug;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::producer::KafkaProducer;
@@ -32,7 +33,7 @@ impl ProcessingStrategy<KafkaPayload> for Next {
     }
 
     fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
-        self.producer.produce(&self.destination, &message.payload);
+        block_on(self.producer.produce(&self.destination, &message.payload));
         debug!("Produced message offset {}", message.offset);
         Ok(())
     }
@@ -65,7 +66,8 @@ impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = App::new("consumer example")
         .version(option_env!("CARGO_PKG_VERSION").unwrap_or(""))
         .about("Simple command line consumer")
@@ -153,5 +155,5 @@ fn main() {
     );
 
     stream_processor.subscribe(topic);
-    stream_processor.run().unwrap();
+    stream_processor.run().await.unwrap();
 }

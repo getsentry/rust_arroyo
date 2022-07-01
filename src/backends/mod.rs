@@ -1,10 +1,10 @@
 use super::types::{Message, Partition, Position, Topic, TopicOrPartition};
+use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use thiserror::Error;
 
 pub mod kafka;
-pub mod local;
 pub mod storages;
 
 #[non_exhaustive]
@@ -73,6 +73,7 @@ pub trait AssignmentCallbacks: Send + Sync {
 /// occurs even if the consumer retains ownership of the partition across
 /// assignments.) For this reason, it is generally good practice to ensure
 /// offsets are committed as part of the revocation callback.
+#[async_trait]
 pub trait Consumer<'a, TPayload: Clone> {
     fn subscribe(
         &mut self,
@@ -89,7 +90,7 @@ pub trait Consumer<'a, TPayload: Clone> {
     /// consumer attempts to read from an invalid location in one of it's
     /// assigned partitions. (Additional details can be found in the
     /// docstring for ``Consumer.seek``.)
-    fn poll(
+    async fn poll(
         &mut self,
         timeout: Option<Duration>,
     ) -> Result<Option<Message<TPayload>>, ConsumerError>;
@@ -141,23 +142,24 @@ pub trait Consumer<'a, TPayload: Clone> {
     /// Stage offsets to be committed. If an offset has already been staged
     /// for a given partition, that offset is overwritten (even if the offset
     /// moves in reverse.)
-    fn stage_positions(
+    async fn stage_positions(
         &mut self,
         positions: HashMap<Partition, Position>,
     ) -> Result<(), ConsumerError>;
 
     /// Commit staged offsets. The return value of this method is a mapping
     /// of streams with their committed offsets as values.
-    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError>;
+    async fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError>;
 
     fn close(&mut self);
 
     fn closed(&self) -> bool;
 }
 
+#[async_trait]
 pub trait Producer<TPayload> {
     /// Produce to a topic or partition.
-    fn produce(&self, destination: &TopicOrPartition, payload: &TPayload);
+    async fn produce(&self, destination: &TopicOrPartition, payload: &TPayload);
 
     fn close(&mut self);
 }

@@ -98,13 +98,13 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         let _ = self.consumer.subscribe(&[topic], callbacks);
     }
 
-    pub fn run_once(&mut self) -> Result<(), RunError> {
+    pub async fn run_once(&mut self) -> Result<(), RunError> {
         let message_carried_over = self.message.is_some();
 
         if message_carried_over {
             // If a message was carried over from the previous run, the consumer
             // should be paused and not returning any messages on ``poll``.
-            let res = self.consumer.poll(Some(Duration::ZERO)).unwrap();
+            let res = self.consumer.poll(Some(Duration::ZERO)).await.unwrap();
             match res {
                 None => {}
                 Some(_) => return Err(RunError::InvalidState),
@@ -112,7 +112,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         } else {
             // Otherwise, we need to try fetch a new message from the consumer,
             // even if there is no active assignment and/or processing strategy.
-            let msg = self.consumer.poll(Some(Duration::ZERO));
+            let msg = self.consumer.poll(Some(Duration::ZERO)).await;
             //TODO: Support errors properly
             match msg {
                 Ok(m) => self.message = m,
@@ -131,8 +131,11 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
                 match commit_request {
                     None => {}
                     Some(request) => {
-                        self.consumer.stage_positions(request.positions).unwrap();
-                        self.consumer.commit_positions().unwrap();
+                        self.consumer
+                            .stage_positions(request.positions)
+                            .await
+                            .unwrap();
+                        self.consumer.commit_positions().await.unwrap();
                     }
                 };
 
@@ -169,9 +172,9 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     }
 
     /// The main run loop, see class docstring for more information.
-    pub fn run(&mut self) -> Result<(), RunError> {
+    pub async fn run(&mut self) -> Result<(), RunError> {
         while !self.shutdown_requested {
-            let ret = self.run_once();
+            let ret = self.run_once().await;
             match ret {
                 Ok(()) => {}
                 Err(e) => {
@@ -210,15 +213,9 @@ mod tests {
     use super::strategies::{
         CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
     };
-    use super::StreamProcessor;
-    use crate::backends::local::broker::LocalBroker;
-    use crate::backends::local::LocalConsumer;
-    use crate::backends::storages::memory::MemoryMessageStorage;
-    use crate::types::{Message, Partition, Position, Topic};
-    use crate::utils::clock::SystemClock;
+    use crate::types::{Message, Position};
     use std::collections::HashMap;
     use std::time::Duration;
-    use uuid::Uuid;
 
     struct TestStrategy {
         message: Option<Message<String>>,
@@ -259,70 +256,5 @@ mod tests {
         fn create(&self) -> Box<dyn ProcessingStrategy<String>> {
             Box::new(TestStrategy { message: None })
         }
-    }
-
-    fn build_broker() -> LocalBroker<String> {
-        let storage: MemoryMessageStorage<String> = Default::default();
-        let clock = SystemClock {};
-        let mut broker = LocalBroker::new(Box::new(storage), Box::new(clock));
-
-        let topic1 = Topic {
-            name: "test1".to_string(),
-        };
-
-        let _ = broker.create_topic(topic1, 1);
-        broker
-    }
-
-    #[test]
-    fn test_processor() {
-        let mut broker = build_broker();
-        let consumer = Box::new(LocalConsumer::new(
-            Uuid::nil(),
-            &mut broker,
-            "test_group".to_string(),
-            false,
-        ));
-
-        let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
-        processor.subscribe(Topic {
-            name: "test1".to_string(),
-        });
-        let res = processor.run_once();
-        assert!(res.is_ok())
-    }
-
-    #[test]
-    fn test_consume() {
-        let mut broker = build_broker();
-        let topic1 = Topic {
-            name: "test1".to_string(),
-        };
-        let partition = Partition {
-            topic: topic1,
-            index: 0,
-        };
-        let _ = broker.produce(&partition, "message1".to_string());
-        let _ = broker.produce(&partition, "message2".to_string());
-
-        let consumer = Box::new(LocalConsumer::new(
-            Uuid::nil(),
-            &mut broker,
-            "test_group".to_string(),
-            false,
-        ));
-
-        let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
-        processor.subscribe(Topic {
-            name: "test1".to_string(),
-        });
-        let res = processor.run_once();
-        assert!(res.is_ok());
-        let res = processor.run_once();
-        assert!(res.is_ok());
-
-        let expected = HashMap::from([(partition, 2)]);
-
-        assert_eq!(processor.tell(), expected)
     }
 }

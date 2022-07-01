@@ -28,7 +28,8 @@ impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = App::new("noop consumer")
         .version(option_env!("CARGO_PKG_VERSION").unwrap_or(""))
         .about("Simple noop consumer")
@@ -104,5 +105,5 @@ fn main() {
 
     info!("Starting no-op consumer");
     stream_processor.subscribe(topic);
-    stream_processor.run().unwrap();
+    stream_processor.run().await.unwrap();
 }

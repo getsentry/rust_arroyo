@@ -2,6 +2,7 @@ use crate::backends::kafka::config::KafkaConfig;
 use crate::backends::kafka::types::KafkaPayload;
 use crate::backends::Producer as ArroyoProducer;
 use crate::types::TopicOrPartition;
+use async_trait::async_trait;
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{BaseProducer, BaseRecord, Producer};
 use std::time::Duration;
@@ -33,8 +34,9 @@ impl KafkaProducer {
     }
 }
 
+#[async_trait]
 impl ArroyoProducer<KafkaPayload> for KafkaProducer {
-    fn produce(&self, destination: &TopicOrPartition, payload: &KafkaPayload) {
+    async fn produce(&self, destination: &TopicOrPartition, payload: &KafkaPayload) {
         let topic = match destination {
             TopicOrPartition::Topic(topic) => topic.name.as_ref(),
             TopicOrPartition::Partition(partition) => partition.topic.name.as_ref(),
