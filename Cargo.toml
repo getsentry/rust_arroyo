@@ -21,6 +21,7 @@ lazy_static = "1.4.0"
 parking_lot = "0.10.0"
 rand="0.8.5"
 async-trait="0.1.56"
+async-mutex = "1.4.0"
 
 [[bin]]
 name = "errors-consumer"
