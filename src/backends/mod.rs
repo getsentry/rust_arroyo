@@ -95,6 +95,8 @@ pub trait Consumer<'a, TPayload: Clone> {
         timeout: Option<Duration>,
     ) -> Result<Option<Message<TPayload>>, ConsumerError>;
 
+    async fn recv(&mut self) -> Result<Message<TPayload>, ConsumerError>;
+
     /// Pause consuming from the provided partitions.
     ///
     /// A partition that is paused will be automatically resumed during

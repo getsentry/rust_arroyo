@@ -209,6 +209,14 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         }
     }
 
+    async fn recv(&mut self) -> Result<ArroyoMessage<KafkaPayload>, ConsumerError> {
+        let consumer = self.consumer.as_mut().unwrap();
+        match consumer.recv().await {
+            Ok(result) => Ok(create_kafka_message(result)),
+            Err(e) => Err(ConsumerError::BrokerError(Box::new(e))),
+        }
+    }
+
     fn pause(&mut self, partitions: HashSet<Partition>) -> Result<(), ConsumerError> {
         self.state.assert_consuming_state()?;
 

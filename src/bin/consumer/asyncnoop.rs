@@ -11,6 +11,7 @@ use rust_arroyo::types::{Partition, Topic};
 use std::collections::HashMap;
 use std::time::Duration;
 use std::time::SystemTime;
+use tokio::time::timeout;
 
 struct EmptyCallbacks {}
 impl AssignmentCallbacks for EmptyCallbacks {
@@ -64,30 +65,25 @@ async fn consume_and_produce(
         source_topic: source_topic.to_string(),
     };
     loop {
-        match consumer.poll(Some(Duration::from_secs(2))).await {
-            Ok(result) => match result {
-                None => {
-                    match strategy.poll().await {
-                        Some(request) => {
-                            consumer.stage_positions(request.positions).await.unwrap();
-                            consumer.commit_positions().await.unwrap();
-                            //info!("Committed: {:?}", request);
+        match timeout(Duration::from_secs(2), consumer.recv()).await {
+            Ok(result) => {
+                match result {
+                    Ok(message) => {
+                        match strategy.poll().await {
+                            Some(request) => {
+                                consumer.stage_positions(request.positions).await.unwrap();
+                                consumer.commit_positions().await.unwrap();
+                                //info!("Committed: {:?}", request);
+                            }
+                            None => {}
                         }
-                        None => {}
+                        strategy.submit(message).await;
+                    }
+                    Err(e) => {
+                        panic!("Kafka error: {}", e)
                     }
                 }
-                Some(m) => {
-                    match strategy.poll().await {
-                        Some(request) => {
-                            consumer.stage_positions(request.positions).await.unwrap();
-                            consumer.commit_positions().await.unwrap();
-                            //info!("Committed: {:?}", request);
-                        }
-                        None => {}
-                    }
-                    strategy.submit(m).await;
-                }
-            },
+            }
             Err(_) => {
                 error!("timeoout, flushing batch");
                 match strategy.poll().await {
