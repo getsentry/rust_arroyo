@@ -1,17 +1,24 @@
 use clap::{App, Arg};
 use log::{debug, error, info};
-use rdkafka::config::ClientConfig;
+use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
+use rdkafka::consumer::stream_consumer::StreamConsumer;
+use rdkafka::consumer::CommitMode;
+use rdkafka::consumer::Consumer;
 use rdkafka::producer::FutureProducer;
 use rdkafka::util::get_rdkafka_version;
-use rust_arroyo::backends::kafka::config::KafkaConfig;
-use rust_arroyo::backends::kafka::KafkaConsumer;
-use rust_arroyo::backends::{AssignmentCallbacks, Consumer};
+use rust_arroyo::backends::kafka::create_kafka_message;
+use rust_arroyo::backends::AssignmentCallbacks;
+use rust_arroyo::processing::strategies::async_noop::build_topic_partitions;
 use rust_arroyo::processing::strategies::async_noop::AsyncNoopCommit;
+use rust_arroyo::processing::strategies::async_noop::CustomContext;
 use rust_arroyo::types::{Partition, Topic};
 use std::collections::HashMap;
 use std::time::Duration;
 use std::time::SystemTime;
 use tokio::time::timeout;
+
+// A type alias with your custom consumer can be created for convenience.
+type LoggingConsumer = StreamConsumer<CustomContext>;
 
 struct EmptyCallbacks {}
 impl AssignmentCallbacks for EmptyCallbacks {
@@ -30,19 +37,28 @@ async fn consume_and_produce(
     dest_topic: &str,
     batch_size: usize,
 ) {
-    let config = KafkaConfig::new_consumer_config(
-        vec![brokers.to_string()],
-        group_id.to_string(),
-        "earliest".to_string(),
-        false,
-        None,
-    );
-    let mut consumer = KafkaConsumer::new(config);
+    let context = CustomContext {};
+
+    let consumer: LoggingConsumer = ClientConfig::new()
+        .set("group.id", group_id)
+        .set("bootstrap.servers", brokers)
+        .set("enable.partition.eof", "false")
+        .set("session.timeout.ms", "6000")
+        .set("enable.auto.commit", "false")
+        //.set("statistics.interval.ms", "30000")
+        .set("auto.offset.reset", "earliest")
+        .set_log_level(RDKafkaLogLevel::Warning)
+        .create_with_context(context)
+        .expect("Consumer creation failed");
+
+    consumer
+        .subscribe(&[source_topic])
+        .expect("Can't subscribe to specified topics");
+
     let topic = Topic {
         name: source_topic.to_string(),
     };
     let topic_clone = topic.clone();
-    let _ = consumer.subscribe(&[topic], Box::new(EmptyCallbacks {}));
 
     let producer: FutureProducer = ClientConfig::new()
         .set("bootstrap.servers", brokers)
@@ -66,31 +82,28 @@ async fn consume_and_produce(
     };
     loop {
         match timeout(Duration::from_secs(2), consumer.recv()).await {
-            Ok(result) => {
-                match result {
-                    Ok(message) => {
-                        match strategy.poll().await {
-                            Some(request) => {
-                                consumer.stage_positions(request.positions).await.unwrap();
-                                consumer.commit_positions().await.unwrap();
-                                //info!("Committed: {:?}", request);
-                            }
-                            None => {}
+            Ok(result) => match result {
+                Err(e) => panic!("Kafka error: {}", e),
+                Ok(m) => {
+                    match strategy.poll().await {
+                        Some(partition_list) => {
+                            let part_list = build_topic_partitions(partition_list);
+                            consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                            info!("Committed: {:?}", part_list);
                         }
-                        strategy.submit(message).await;
+                        None => {}
                     }
-                    Err(e) => {
-                        panic!("Kafka error: {}", e)
-                    }
+
+                    strategy.submit(create_kafka_message(m)).await;
                 }
-            }
+            },
             Err(_) => {
                 error!("timeoout, flushing batch");
                 match strategy.poll().await {
-                    Some(request) => {
-                        consumer.stage_positions(request.positions).await.unwrap();
-                        consumer.commit_positions().await.unwrap();
-                        //info!("Committed: {:?}", request);
+                    Some(partition_list) => {
+                        let part_list = build_topic_partitions(partition_list);
+                        consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                        info!("Committed: {:?}", part_list);
                     }
                     None => {}
                 }

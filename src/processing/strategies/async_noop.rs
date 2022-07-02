@@ -59,6 +59,18 @@ fn build_commit_request(partitions: TopicPartitionList, topic: Topic) -> CommitR
     CommitRequest { positions: ret }
 }
 
+pub fn build_topic_partitions(commit_request: CommitRequest) -> TopicPartitionList {
+    let mut topic_map = HashMap::new();
+    for (partition, position) in commit_request.positions.iter() {
+        topic_map.insert(
+            (partition.topic.name.clone(), partition.index as i32),
+            Offset::from_raw(position.offset as i64),
+        );
+    }
+
+    TopicPartitionList::from_topic_map(&topic_map).unwrap()
+}
+
 pub struct AsyncNoopCommit {
     pub topic: Topic,
     pub producer: FutureProducer,
