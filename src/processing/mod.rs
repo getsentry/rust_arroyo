@@ -1,12 +1,24 @@
 pub mod strategies;
 
+use crate::backends::kafka::create_kafka_message;
+use crate::backends::kafka::types::KafkaPayload;
 use crate::backends::{AssignmentCallbacks, Consumer};
+use crate::processing::strategies::async_noop::build_topic_partitions;
+use crate::processing::strategies::async_noop::AsyncNoopCommit;
+use crate::processing::strategies::async_noop::CustomContext;
 use crate::types::{Message, Partition, Topic};
+use async_mutex::Mutex;
+use futures::executor::block_on;
+use log::{error, info};
+use rdkafka::consumer::stream_consumer::StreamConsumer;
+use rdkafka::consumer::CommitMode;
+use rdkafka::consumer::Consumer as RdConsumer;
 use std::collections::HashMap;
 use std::mem::replace;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use strategies::{ProcessingStrategy, ProcessingStrategyFactory};
+use tokio::time::timeout;
 
 #[derive(Debug, Clone)]
 pub struct InvalidState;
@@ -41,11 +53,11 @@ impl<TPayload: 'static + Clone> AssignmentCallbacks for Callbacks<TPayload> {
     // initialization.  But we just provide a signal back to the
     // processor to do that.
     fn on_assign(&mut self, _: HashMap<Partition, u64>) {
-        let mut stg = self.strategies.lock().unwrap();
+        let mut stg = block_on(self.strategies.lock());
         stg.strategy = Some(stg.processing_factory.create());
     }
     fn on_revoke(&mut self, _: Vec<Partition>) {
-        let mut stg = self.strategies.lock().unwrap();
+        let mut stg = block_on(self.strategies.lock());
         match stg.strategy.as_mut() {
             None => {}
             Some(s) => {
@@ -98,13 +110,13 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         let _ = self.consumer.subscribe(&[topic], callbacks);
     }
 
-    pub fn run_once(&mut self) -> Result<(), RunError> {
+    pub async fn run_once(&mut self) -> Result<(), RunError> {
         let message_carried_over = self.message.is_some();
 
         if message_carried_over {
             // If a message was carried over from the previous run, the consumer
             // should be paused and not returning any messages on ``poll``.
-            let res = self.consumer.poll(Some(Duration::ZERO)).unwrap();
+            let res = self.consumer.poll(Some(Duration::ZERO)).await.unwrap();
             match res {
                 None => {}
                 Some(_) => return Err(RunError::InvalidState),
@@ -112,7 +124,7 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
         } else {
             // Otherwise, we need to try fetch a new message from the consumer,
             // even if there is no active assignment and/or processing strategy.
-            let msg = self.consumer.poll(Some(Duration::ZERO));
+            let msg = self.consumer.poll(Some(Duration::ZERO)).await;
             //TODO: Support errors properly
             match msg {
                 Ok(m) => self.message = m,
@@ -120,25 +132,28 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
             }
         }
 
-        let mut trait_callbacks = self.strategies.lock().unwrap();
+        let mut trait_callbacks = self.strategies.lock().await;
         match trait_callbacks.strategy.as_mut() {
             None => match self.message.as_ref() {
                 None => {}
                 Some(_) => return Err(RunError::InvalidState),
             },
             Some(strategy) => {
-                let commit_request = strategy.poll();
+                let commit_request = strategy.poll().await;
                 match commit_request {
                     None => {}
                     Some(request) => {
-                        self.consumer.stage_positions(request.positions).unwrap();
-                        self.consumer.commit_positions().unwrap();
+                        self.consumer
+                            .stage_positions(request.positions)
+                            .await
+                            .unwrap();
+                        self.consumer.commit_positions().await.unwrap();
                     }
                 };
 
                 let msg = replace(&mut self.message, None);
                 if let Some(msg_s) = msg {
-                    let ret = strategy.submit(msg_s);
+                    let ret = strategy.submit(msg_s).await;
                     match ret {
                         Ok(()) => {}
                         Err(_) => {
@@ -169,13 +184,13 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     }
 
     /// The main run loop, see class docstring for more information.
-    pub fn run(&mut self) -> Result<(), RunError> {
+    pub async fn run(&mut self) -> Result<(), RunError> {
         while !self.shutdown_requested {
-            let ret = self.run_once();
+            let ret = self.run_once().await;
             match ret {
                 Ok(()) => {}
                 Err(e) => {
-                    let mut trait_callbacks = self.strategies.lock().unwrap();
+                    let mut trait_callbacks = self.strategies.lock().await;
 
                     match trait_callbacks.strategy.as_mut() {
                         None => {}
@@ -205,27 +220,123 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     }
 }
 
+pub struct StreamingStreamProcessor {
+    pub consumer: StreamConsumer<CustomContext>,
+    pub strategy: AsyncNoopCommit,
+    pub message: Option<Message<KafkaPayload>>,
+    pub shutdown_requested: bool,
+}
+
+impl StreamingStreamProcessor {
+    pub async fn run_once(&mut self) -> Result<(), RunError> {
+        let message_carried_over = self.message.is_some();
+
+        if message_carried_over {
+            // If a message was carried over from the previous run, the consumer
+            // should be paused and not returning any messages on ``poll``.
+            let res = timeout(Duration::from_secs(2), self.consumer.recv()).await;
+            match res {
+                Err(_) => {}
+                Ok(_) => return Err(RunError::InvalidState),
+            }
+        } else {
+            // Otherwise, we need to try fetch a new message from the consumer,
+            // even if there is no active assignment and/or processing strategy.
+            let msg = timeout(Duration::from_secs(2), self.consumer.recv()).await;
+            //TODO: Support errors properly
+            match msg {
+                Ok(m) => match m {
+                    Ok(msg) => {
+                        self.message = Some(create_kafka_message(msg));
+                    }
+                    Err(_) => return Err(RunError::PollError),
+                },
+                Err(_) => self.message = None,
+            }
+        }
+
+        let commit_request = self.strategy.poll().await;
+        match commit_request {
+            None => {}
+            Some(request) => {
+                let part_list = build_topic_partitions(request);
+                self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                info!("Committed: {:?}", part_list);
+            }
+        };
+
+        let msg = replace(&mut self.message, None);
+        if let Some(msg_s) = msg {
+            self.strategy.submit(msg_s).await;
+        }
+        Ok(())
+    }
+
+    pub async fn _run_once(&mut self) -> Result<(), RunError> {
+        match timeout(Duration::from_secs(2), self.consumer.recv()).await {
+            Ok(result) => match result {
+                Err(e) => panic!("Kafka error: {}", e),
+                Ok(m) => {
+                    match self.strategy.poll().await {
+                        Some(partition_list) => {
+                            let part_list = build_topic_partitions(partition_list);
+                            self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                            info!("Committed: {:?}", part_list);
+                        }
+                        None => {}
+                    }
+
+                    self.strategy.submit(create_kafka_message(m)).await;
+                }
+            },
+            Err(_) => {
+                error!("timeoout, flushing batch");
+                match self.strategy.poll().await {
+                    Some(partition_list) => {
+                        let part_list = build_topic_partitions(partition_list);
+                        self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                        info!("Committed: {:?}", part_list);
+                    }
+                    None => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The main run loop, see class docstring for more information.
+    pub async fn run(&mut self) -> Result<(), RunError> {
+        while !self.shutdown_requested {
+            match self.run_once().await {
+                Ok(()) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    pub fn signal_shutdown(&mut self) {
+        self.shutdown_requested = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::strategies::{
         CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
     };
-    use super::StreamProcessor;
-    use crate::backends::local::broker::LocalBroker;
-    use crate::backends::local::LocalConsumer;
-    use crate::backends::storages::memory::MemoryMessageStorage;
-    use crate::types::{Message, Partition, Position, Topic};
-    use crate::utils::clock::SystemClock;
+    use crate::types::{Message, Position};
+    use async_trait::async_trait;
     use std::collections::HashMap;
     use std::time::Duration;
-    use uuid::Uuid;
 
     struct TestStrategy {
         message: Option<Message<String>>,
     }
+    #[async_trait]
     impl ProcessingStrategy<String> for TestStrategy {
         #[allow(clippy::manual_map)]
-        fn poll(&mut self) -> Option<CommitRequest> {
+        async fn poll(&mut self) -> Option<CommitRequest> {
             match self.message.as_ref() {
                 None => None,
                 Some(message) => Some(CommitRequest {
@@ -240,7 +351,7 @@ mod tests {
             }
         }
 
-        fn submit(&mut self, message: Message<String>) -> Result<(), MessageRejected> {
+        async fn submit(&mut self, message: Message<String>) -> Result<(), MessageRejected> {
             self.message = Some(message);
             Ok(())
         }
@@ -259,70 +370,5 @@ mod tests {
         fn create(&self) -> Box<dyn ProcessingStrategy<String>> {
             Box::new(TestStrategy { message: None })
         }
-    }
-
-    fn build_broker() -> LocalBroker<String> {
-        let storage: MemoryMessageStorage<String> = Default::default();
-        let clock = SystemClock {};
-        let mut broker = LocalBroker::new(Box::new(storage), Box::new(clock));
-
-        let topic1 = Topic {
-            name: "test1".to_string(),
-        };
-
-        let _ = broker.create_topic(topic1, 1);
-        broker
-    }
-
-    #[test]
-    fn test_processor() {
-        let mut broker = build_broker();
-        let consumer = Box::new(LocalConsumer::new(
-            Uuid::nil(),
-            &mut broker,
-            "test_group".to_string(),
-            false,
-        ));
-
-        let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
-        processor.subscribe(Topic {
-            name: "test1".to_string(),
-        });
-        let res = processor.run_once();
-        assert!(res.is_ok())
-    }
-
-    #[test]
-    fn test_consume() {
-        let mut broker = build_broker();
-        let topic1 = Topic {
-            name: "test1".to_string(),
-        };
-        let partition = Partition {
-            topic: topic1,
-            index: 0,
-        };
-        let _ = broker.produce(&partition, "message1".to_string());
-        let _ = broker.produce(&partition, "message2".to_string());
-
-        let consumer = Box::new(LocalConsumer::new(
-            Uuid::nil(),
-            &mut broker,
-            "test_group".to_string(),
-            false,
-        ));
-
-        let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
-        processor.subscribe(Topic {
-            name: "test1".to_string(),
-        });
-        let res = processor.run_once();
-        assert!(res.is_ok());
-        let res = processor.run_once();
-        assert!(res.is_ok());
-
-        let expected = HashMap::from([(partition, 2)]);
-
-        assert_eq!(processor.tell(), expected)
     }
 }

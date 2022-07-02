@@ -13,7 +13,8 @@ impl AssignmentCallbacks for EmptyCallbacks {
     fn on_revoke(&mut self, _: Vec<Partition>) {}
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let config = KafkaConfig::new_consumer_config(
         vec!["localhost:9092".to_string()],
         "my_group".to_string(),
@@ -30,7 +31,7 @@ fn main() {
     println!("Subscribed");
     for _ in 0..20 {
         println!("Polling");
-        let res = consumer.poll(None);
+        let res = consumer.poll(None).await;
         match res.unwrap() {
             Some(x) => {
                 println!("MSG {}", x)

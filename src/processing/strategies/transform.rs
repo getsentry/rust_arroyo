@@ -2,6 +2,7 @@ use crate::processing::strategies::{
     CommitRequest, InvalidMessage, MessageRejected, ProcessingStrategy,
 };
 use crate::types::Message;
+use async_trait::async_trait;
 use std::time::Duration;
 
 pub struct Transform<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> {
@@ -9,23 +10,26 @@ pub struct Transform<TPayload: Clone + Send + Sync, TTransformed: Clone + Send +
     pub next_step: Box<dyn ProcessingStrategy<TTransformed>>,
 }
 
+#[async_trait]
 impl<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> ProcessingStrategy<TPayload>
     for Transform<TPayload, TTransformed>
 {
-    fn poll(&mut self) -> Option<CommitRequest> {
-        self.next_step.poll()
+    async fn poll(&mut self) -> Option<CommitRequest> {
+        self.next_step.poll().await
     }
 
-    fn submit(&mut self, message: Message<TPayload>) -> Result<(), MessageRejected> {
+    async fn submit(&mut self, message: Message<TPayload>) -> Result<(), MessageRejected> {
         // TODO: Handle InvalidMessage
         let transformed = (self.function)(message.payload).unwrap();
 
-        self.next_step.submit(Message {
-            partition: message.partition,
-            offset: message.offset,
-            payload: transformed,
-            timestamp: message.timestamp,
-        })
+        self.next_step
+            .submit(Message {
+                partition: message.partition,
+                offset: message.offset,
+                payload: transformed,
+                timestamp: message.timestamp,
+            })
+            .await
     }
 
     fn close(&mut self) {
@@ -48,21 +52,23 @@ mod tests {
         CommitRequest, InvalidMessage, MessageRejected, ProcessingStrategy,
     };
     use crate::types::{Message, Partition, Topic};
+    use async_trait::async_trait;
     use chrono::Utc;
     use std::time::Duration;
 
-    #[test]
-    fn test_transform() {
+    #[tokio::test]
+    async fn test_transform() {
         fn identity(value: String) -> Result<String, InvalidMessage> {
             Ok(value)
         }
 
         struct Noop {}
+        #[async_trait]
         impl ProcessingStrategy<String> for Noop {
-            fn poll(&mut self) -> Option<CommitRequest> {
+            async fn poll(&mut self) -> Option<CommitRequest> {
                 None
             }
-            fn submit(&mut self, _message: Message<String>) -> Result<(), MessageRejected> {
+            async fn submit(&mut self, _message: Message<String>) -> Result<(), MessageRejected> {
                 Ok(())
             }
             fn close(&mut self) {}
@@ -91,6 +97,7 @@ mod tests {
                 "Hello world".to_string(),
                 Utc::now(),
             ))
+            .await
             .unwrap();
     }
 }

@@ -5,10 +5,11 @@ use super::ConsumerError;
 use crate::backends::kafka::types::KafkaPayload;
 use crate::types::Message as ArroyoMessage;
 use crate::types::{Partition, Position, Topic};
+use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rdkafka::client::ClientContext;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
-use rdkafka::consumer::base_consumer::BaseConsumer;
+use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
 use rdkafka::error::KafkaResult;
 use rdkafka::message::{BorrowedHeaders, BorrowedMessage, Message};
@@ -18,6 +19,7 @@ use std::collections::HashSet;
 use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::time::timeout;
 
 pub mod config;
 mod errors;
@@ -49,7 +51,7 @@ impl KafkaConsumerState {
     }
 }
 
-fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
+pub fn create_kafka_message(msg: BorrowedMessage) -> ArroyoMessage<KafkaPayload> {
     let topic = Topic {
         name: msg.topic().to_string(),
     };
@@ -140,7 +142,7 @@ pub struct KafkaConsumer {
     // can only pass the callbacks during the subscribe call.
     // So we need to build the kafka consumer upon subscribe and not
     // in the constructor.
-    consumer: Option<BaseConsumer<CustomContext>>,
+    consumer: Option<StreamConsumer<CustomContext>>,
     config: KafkaConfig,
     state: KafkaConsumerState,
     offsets: Arc<Mutex<HashMap<Partition, u64>>>,
@@ -159,6 +161,7 @@ impl KafkaConsumer {
     }
 }
 
+#[async_trait]
 impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     fn subscribe(
         &mut self,
@@ -172,7 +175,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
 
         let mut config_obj: ClientConfig = self.config.clone().into();
 
-        let consumer: BaseConsumer<CustomContext> = config_obj
+        let consumer: StreamConsumer<CustomContext> = config_obj
             .set_log_level(RDKafkaLogLevel::Debug)
             .create_with_context(context)?;
         let topic_str: Vec<&str> = topics.iter().map(|t| t.name.as_ref()).collect();
@@ -190,21 +193,27 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         Ok(())
     }
 
-    fn poll(
+    async fn poll(
         &mut self,
-        timeout: Option<Duration>,
+        ttl: Option<Duration>,
     ) -> Result<Option<ArroyoMessage<KafkaPayload>>, ConsumerError> {
         self.state.assert_consuming_state()?;
 
-        let duration = timeout.unwrap_or(Duration::ZERO);
         let consumer = self.consumer.as_mut().unwrap();
-        let res = consumer.poll(duration);
-        match res {
-            None => Ok(None),
-            Some(res) => {
-                let msg = res?;
+        match timeout(ttl.unwrap_or(Duration::from_secs(2)), consumer.recv()).await {
+            Ok(result) => {
+                let msg = result?;
                 Ok(Some(create_kafka_message(msg)))
             }
+            Err(_) => Ok(None),
+        }
+    }
+
+    async fn recv(&mut self) -> Result<ArroyoMessage<KafkaPayload>, ConsumerError> {
+        let consumer = self.consumer.as_mut().unwrap();
+        match consumer.recv().await {
+            Ok(result) => Ok(create_kafka_message(result)),
+            Err(e) => Err(ConsumerError::BrokerError(Box::new(e))),
         }
     }
 
@@ -264,7 +273,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         Ok(())
     }
 
-    fn stage_positions(
+    async fn stage_positions(
         &mut self,
         positions: HashMap<Partition, Position>,
     ) -> Result<(), ConsumerError> {
@@ -274,7 +283,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         Ok(())
     }
 
-    fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError> {
+    async fn commit_positions(&mut self) -> Result<HashMap<Partition, Position>, ConsumerError> {
         self.state.assert_consuming_state()?;
 
         let mut topic_map = HashMap::new();
@@ -356,8 +365,8 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn test_subscribe() {
+    #[tokio::test]
+    async fn test_subscribe() {
         let configuration = KafkaConfig::new_consumer_config(
             vec!["localhost:9092".to_string()],
             "my-group".to_string(),
@@ -393,7 +402,10 @@ mod tests {
         assert_eq!(consumer.tell().unwrap(), HashMap::new());
 
         // Getting the assignment may take a while, wait up to 5 seconds
-        consumer.poll(Some(Duration::from_millis(5000))).unwrap();
+        consumer
+            .poll(Some(Duration::from_millis(5000)))
+            .await
+            .unwrap();
         let offsets = consumer.tell().unwrap();
         // One partition was assigned
         assert!(offsets.len() == 1);
@@ -431,11 +443,14 @@ mod tests {
             },
         )]);
 
-        consumer.stage_positions(positions.clone()).unwrap();
+        consumer.stage_positions(positions.clone()).await.unwrap();
 
         // Wait until the consumer got an assignment
         for _ in 0..10 {
-            consumer.poll(Some(Duration::from_millis(5_000))).unwrap();
+            consumer
+                .poll(Some(Duration::from_millis(5_000)))
+                .await
+                .unwrap();
             if consumer.tell().unwrap().len() == 1 {
                 println!("Received assignment");
                 break;
@@ -443,7 +458,7 @@ mod tests {
             sleep(Duration::from_millis(200));
         }
 
-        let res = consumer.commit_positions().unwrap();
+        let res = consumer.commit_positions().await.unwrap();
         assert_eq!(res, positions);
         consumer.unsubscribe().unwrap();
         consumer.close();

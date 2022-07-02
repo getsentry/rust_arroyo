@@ -1,6 +1,7 @@
 extern crate rust_arroyo;
 
 use crate::rust_arroyo::backends::Producer;
+use async_trait::async_trait;
 use clap::{App, Arg};
 use log::debug;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
@@ -26,13 +27,16 @@ struct Next {
     destination: TopicOrPartition,
     producer: KafkaProducer,
 }
+#[async_trait]
 impl ProcessingStrategy<KafkaPayload> for Next {
-    fn poll(&mut self) -> Option<CommitRequest> {
+    async fn poll(&mut self) -> Option<CommitRequest> {
         None
     }
 
-    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
-        self.producer.produce(&self.destination, &message.payload);
+    async fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
+        self.producer
+            .produce(&self.destination, &message.payload)
+            .await;
         debug!("Produced message offset {}", message.offset);
         Ok(())
     }
@@ -65,7 +69,8 @@ impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = App::new("consumer example")
         .version(option_env!("CARGO_PKG_VERSION").unwrap_or(""))
         .about("Simple command line consumer")
@@ -153,5 +158,5 @@ fn main() {
     );
 
     stream_processor.subscribe(topic);
-    stream_processor.run().unwrap();
+    stream_processor.run().await.unwrap();
 }
