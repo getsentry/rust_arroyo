@@ -1,6 +1,7 @@
 pub mod strategies;
 
 use crate::backends::kafka::create_kafka_message;
+use crate::backends::kafka::types::KafkaPayload;
 use crate::backends::{AssignmentCallbacks, Consumer};
 use crate::processing::strategies::async_noop::build_topic_partitions;
 use crate::processing::strategies::async_noop::AsyncNoopCommit;
@@ -222,12 +223,56 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
 pub struct StreamingStreamProcessor {
     pub consumer: StreamConsumer<CustomContext>,
     pub strategy: AsyncNoopCommit,
-    //message: Option<Message<TPayload>>,
+    pub message: Option<Message<KafkaPayload>>,
     pub shutdown_requested: bool,
 }
 
 impl StreamingStreamProcessor {
     pub async fn run_once(&mut self) -> Result<(), RunError> {
+        let message_carried_over = self.message.is_some();
+
+        if message_carried_over {
+            // If a message was carried over from the previous run, the consumer
+            // should be paused and not returning any messages on ``poll``.
+            let res = timeout(Duration::from_secs(2), self.consumer.recv()).await;
+            match res {
+                Err(_) => {}
+                Ok(_) => return Err(RunError::InvalidState),
+            }
+        } else {
+            // Otherwise, we need to try fetch a new message from the consumer,
+            // even if there is no active assignment and/or processing strategy.
+            let msg = timeout(Duration::from_secs(2), self.consumer.recv()).await;
+            //TODO: Support errors properly
+            match msg {
+                Ok(m) => match m {
+                    Ok(msg) => {
+                        self.message = Some(create_kafka_message(msg));
+                    }
+                    Err(_) => return Err(RunError::PollError),
+                },
+                Err(_) => self.message = None,
+            }
+        }
+
+        let commit_request = self.strategy.poll().await;
+        match commit_request {
+            None => {}
+            Some(request) => {
+                let part_list = build_topic_partitions(request);
+                self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                info!("Committed: {:?}", part_list);
+            }
+        };
+
+        let msg = replace(&mut self.message, None);
+        if let Some(msg_s) = msg {
+            self.strategy.submit(msg_s).await;
+        }
+        Ok(())
+    }
+
+    pub async fn _run_once(&mut self) -> Result<(), RunError> {
         match timeout(Duration::from_secs(2), self.consumer.recv()).await {
             Ok(result) => match result {
                 Err(e) => panic!("Kafka error: {}", e),

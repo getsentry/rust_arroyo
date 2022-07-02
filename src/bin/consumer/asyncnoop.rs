@@ -80,6 +80,7 @@ async fn consume_and_produce(
     let mut processor = StreamingStreamProcessor {
         consumer,
         strategy,
+        message: None,
         shutdown_requested: false,
     };
 
