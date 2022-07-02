@@ -199,9 +199,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     ) -> Result<Option<ArroyoMessage<KafkaPayload>>, ConsumerError> {
         self.state.assert_consuming_state()?;
 
-        let duration = ttl.unwrap_or(Duration::ZERO);
         let consumer = self.consumer.as_mut().unwrap();
-        match timeout(duration, consumer.recv()).await {
+        match timeout(ttl.unwrap_or(Duration::from_secs(2)), consumer.recv()).await {
             Ok(result) => {
                 let msg = result?;
                 Ok(Some(create_kafka_message(msg)))

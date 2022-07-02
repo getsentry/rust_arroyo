@@ -64,7 +64,7 @@ async fn consume_and_produce(
         source_topic: source_topic.to_string(),
     };
     loop {
-        match consumer.poll(Some(Duration::ZERO)).await {
+        match consumer.poll(Some(Duration::from_secs(2))).await {
             Ok(result) => match result {
                 None => {
                     match strategy.poll().await {
