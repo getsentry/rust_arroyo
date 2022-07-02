@@ -1,21 +1,17 @@
 use clap::{App, Arg};
-use log::{debug, error, info};
+use log::{debug, info};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::CommitMode;
 use rdkafka::consumer::Consumer;
 use rdkafka::producer::FutureProducer;
 use rdkafka::util::get_rdkafka_version;
-use rust_arroyo::backends::kafka::create_kafka_message;
 use rust_arroyo::backends::AssignmentCallbacks;
-use rust_arroyo::processing::strategies::async_noop::build_topic_partitions;
 use rust_arroyo::processing::strategies::async_noop::AsyncNoopCommit;
 use rust_arroyo::processing::strategies::async_noop::CustomContext;
+use rust_arroyo::processing::StreamingStreamProcessor;
 use rust_arroyo::types::{Partition, Topic};
 use std::collections::HashMap;
-use std::time::Duration;
 use std::time::SystemTime;
-use tokio::time::timeout;
 
 // A type alias with your custom consumer can be created for convenience.
 type LoggingConsumer = StreamConsumer<CustomContext>;
@@ -71,7 +67,7 @@ async fn consume_and_produce(
     );
     let batch = Vec::new();
 
-    let mut strategy = AsyncNoopCommit {
+    let strategy = AsyncNoopCommit {
         topic: topic_clone,
         producer,
         batch,
@@ -80,35 +76,16 @@ async fn consume_and_produce(
         dest_topic: dest_topic.to_string(),
         source_topic: source_topic.to_string(),
     };
-    loop {
-        match timeout(Duration::from_secs(2), consumer.recv()).await {
-            Ok(result) => match result {
-                Err(e) => panic!("Kafka error: {}", e),
-                Ok(m) => {
-                    match strategy.poll().await {
-                        Some(partition_list) => {
-                            let part_list = build_topic_partitions(partition_list);
-                            consumer.commit(&part_list, CommitMode::Sync).unwrap();
-                            info!("Committed: {:?}", part_list);
-                        }
-                        None => {}
-                    }
 
-                    strategy.submit(create_kafka_message(m)).await;
-                }
-            },
-            Err(_) => {
-                error!("timeoout, flushing batch");
-                match strategy.poll().await {
-                    Some(partition_list) => {
-                        let part_list = build_topic_partitions(partition_list);
-                        consumer.commit(&part_list, CommitMode::Sync).unwrap();
-                        info!("Committed: {:?}", part_list);
-                    }
-                    None => {}
-                }
-            }
-        }
+    let mut processor = StreamingStreamProcessor {
+        consumer,
+        strategy,
+        shutdown_requested: false,
+    };
+
+    match processor.run().await {
+        Ok(_) => {}
+        Err(_) => panic!("Kafka error"),
     }
 }
 

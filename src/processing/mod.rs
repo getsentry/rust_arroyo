@@ -1,14 +1,23 @@
 pub mod strategies;
 
+use crate::backends::kafka::create_kafka_message;
 use crate::backends::{AssignmentCallbacks, Consumer};
+use crate::processing::strategies::async_noop::build_topic_partitions;
+use crate::processing::strategies::async_noop::AsyncNoopCommit;
+use crate::processing::strategies::async_noop::CustomContext;
 use crate::types::{Message, Partition, Topic};
 use async_mutex::Mutex;
 use futures::executor::block_on;
+use log::{error, info};
+use rdkafka::consumer::stream_consumer::StreamConsumer;
+use rdkafka::consumer::CommitMode;
+use rdkafka::consumer::Consumer as RdConsumer;
 use std::collections::HashMap;
 use std::mem::replace;
 use std::sync::Arc;
 use std::time::Duration;
 use strategies::{ProcessingStrategy, ProcessingStrategyFactory};
+use tokio::time::timeout;
 
 #[derive(Debug, Clone)]
 pub struct InvalidState;
@@ -207,6 +216,61 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
 
     pub fn tell(self) -> HashMap<Partition, u64> {
         self.consumer.tell().unwrap()
+    }
+}
+
+pub struct StreamingStreamProcessor {
+    pub consumer: StreamConsumer<CustomContext>,
+    pub strategy: AsyncNoopCommit,
+    //message: Option<Message<TPayload>>,
+    pub shutdown_requested: bool,
+}
+
+impl StreamingStreamProcessor {
+    pub async fn run_once(&mut self) -> Result<(), RunError> {
+        match timeout(Duration::from_secs(2), self.consumer.recv()).await {
+            Ok(result) => match result {
+                Err(e) => panic!("Kafka error: {}", e),
+                Ok(m) => {
+                    match self.strategy.poll().await {
+                        Some(partition_list) => {
+                            let part_list = build_topic_partitions(partition_list);
+                            self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                            info!("Committed: {:?}", part_list);
+                        }
+                        None => {}
+                    }
+
+                    self.strategy.submit(create_kafka_message(m)).await;
+                }
+            },
+            Err(_) => {
+                error!("timeoout, flushing batch");
+                match self.strategy.poll().await {
+                    Some(partition_list) => {
+                        let part_list = build_topic_partitions(partition_list);
+                        self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                        info!("Committed: {:?}", part_list);
+                    }
+                    None => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The main run loop, see class docstring for more information.
+    pub async fn run(&mut self) -> Result<(), RunError> {
+        loop {
+            match self.run_once().await {
+                Ok(()) => {}
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    pub fn signal_shutdown(&mut self) {
+        self.shutdown_requested = true;
     }
 }
 
