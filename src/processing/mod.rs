@@ -306,12 +306,13 @@ impl StreamingStreamProcessor {
 
     /// The main run loop, see class docstring for more information.
     pub async fn run(&mut self) -> Result<(), RunError> {
-        loop {
+        while !self.shutdown_requested {
             match self.run_once().await {
                 Ok(()) => {}
                 Err(e) => return Err(e),
             }
         }
+        Ok(())
     }
 
     pub fn signal_shutdown(&mut self) {
