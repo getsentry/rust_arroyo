@@ -1,5 +1,8 @@
 use crate::backends::kafka::types::KafkaPayload;
-use crate::types::Message;
+use crate::processing::strategies::CommitRequest;
+use crate::types::{Message, Partition, Position, Topic};
+use async_trait::async_trait;
+use chrono::Utc;
 use futures::future::{try_join_all, Future};
 use log::info;
 use rdkafka::client::ClientContext;
@@ -31,7 +34,33 @@ impl ConsumerContext for CustomContext {
     }
 }
 
+#[async_trait]
+pub trait ProcessingStrategy {
+    async fn poll(&mut self) -> Option<TopicPartitionList>;
+
+    async fn submit(&mut self, message: Message<KafkaPayload>);
+}
+
+fn build_commit_request(partitions: TopicPartitionList, topic: Topic) -> CommitRequest {
+    let elements = partitions.elements_for_topic(&topic.name);
+    let mut ret: HashMap<Partition, Position> = HashMap::new();
+    for element in elements {
+        ret.insert(
+            Partition {
+                topic: topic.clone(),
+                index: element.partition() as u16,
+            },
+            Position {
+                offset: element.offset().to_raw().unwrap() as u64,
+                timestamp: Utc::now(),
+            },
+        );
+    }
+    CommitRequest { positions: ret }
+}
+
 pub struct AsyncNoopCommit {
+    pub topic: Topic,
     pub producer: FutureProducer,
     pub last_batch_flush: SystemTime,
     pub batch: FutureBatch<dyn Future<Output = OwnedDeliveryResult>>,
@@ -41,7 +70,7 @@ pub struct AsyncNoopCommit {
 }
 
 impl AsyncNoopCommit {
-    pub async fn poll(&mut self) -> Option<TopicPartitionList> {
+    pub async fn poll(&mut self) -> Option<CommitRequest> {
         if self.batch.len() > self.batch_size
             || SystemTime::now()
                 .duration_since(self.last_batch_flush)
@@ -79,9 +108,9 @@ impl AsyncNoopCommit {
         }));
     }
 
-    async fn flush_batch(&mut self) -> Option<TopicPartitionList> {
+    async fn flush_batch(&mut self) -> Option<CommitRequest> {
         if self.batch.is_empty() {
-            println!("batch is empty, nothing to flush");
+            //println!("batch is empty, nothing to flush");
             return None;
         }
         let results = try_join_all(self.batch.iter_mut()).await;
@@ -107,7 +136,7 @@ impl AsyncNoopCommit {
                     .collect();
                 let partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
                 self.batch.clear();
-                Some(partition_list)
+                Some(build_commit_request(partition_list, self.topic.clone()))
             }
         }
     }
