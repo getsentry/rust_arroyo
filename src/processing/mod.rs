@@ -304,14 +304,17 @@ impl StreamingStreamProcessor {
         match commit_request {
             None => {}
             Some(request) => {
-                //let part_list = build_topic_partitions(request);
-                self.consumer
-                    .stage_positions(request.positions)
-                    .await
-                    .unwrap();
-                self.consumer.commit_positions().await.unwrap();
+                let part_list = build_topic_partitions(request);
+                //self.consumer
+                //    .stage_positions(request.positions)
+                //    .await
+                //    .unwrap();
+                //self.consumer.commit_positions().await.unwrap();
 
-                //self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                self.consumer
+                    .consumer
+                    .commit(&part_list, CommitMode::Sync)
+                    .unwrap();
                 //info!("Committed: {:?}", part_list);
             }
         };
