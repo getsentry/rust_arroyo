@@ -309,7 +309,7 @@ impl StreamingStreamProcessor {
                 //    .stage_positions(request.positions)
                 //    .await
                 //    .unwrap();
-                self.consumer.commit_positions().await.unwrap();
+                //self.consumer.commit_positions().await.unwrap();
 
                 self.consumer
                     .consumer
