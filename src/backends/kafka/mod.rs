@@ -146,7 +146,7 @@ pub fn create_and_subscribe(
     let mut config_obj: ClientConfig = config.into();
 
     let consumer: StreamConsumer<CustomContext> = config_obj
-        .set_log_level(RDKafkaLogLevel::Debug)
+        .set_log_level(RDKafkaLogLevel::Warning)
         .create_with_context(context)?;
 
     Ok(KafkaConsumer {
