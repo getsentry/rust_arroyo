@@ -173,7 +173,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         let mut config_obj: ClientConfig = self.config.clone().into();
 
         let consumer: BaseConsumer<CustomContext> = config_obj
-            .set_log_level(RDKafkaLogLevel::Debug)
+            .set_log_level(RDKafkaLogLevel::Warning)
             .create_with_context(context)?;
         let topic_str: Vec<&str> = topics.iter().map(|t| t.name.as_ref()).collect();
         consumer.subscribe(&topic_str)?;
