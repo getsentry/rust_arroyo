@@ -75,11 +75,7 @@ pub trait AssignmentCallbacks: Send + Sync {
 /// offsets are committed as part of the revocation callback.
 #[async_trait]
 pub trait Consumer<'a, TPayload: Clone> {
-    fn subscribe(
-        &mut self,
-        topic: &[Topic],
-        callbacks: Box<dyn AssignmentCallbacks>,
-    ) -> Result<(), ConsumerError>;
+    fn subscribe(&mut self, topic: &[Topic]) -> Result<(), ConsumerError>;
 
     fn unsubscribe(&mut self) -> Result<(), ConsumerError>;
 

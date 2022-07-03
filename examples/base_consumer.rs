@@ -1,7 +1,7 @@
 extern crate rust_arroyo;
 
 use rust_arroyo::backends::kafka::config::KafkaConfig;
-use rust_arroyo::backends::kafka::KafkaConsumer;
+use rust_arroyo::backends::kafka::{create_and_subscribe, KafkaConsumer};
 use rust_arroyo::backends::AssignmentCallbacks;
 use rust_arroyo::backends::Consumer;
 use rust_arroyo::types::{Partition, Topic};
@@ -22,11 +22,11 @@ async fn main() {
         false,
         None,
     );
-    let mut consumer = KafkaConsumer::new(config);
+    let mut consumer = create_and_subscribe(Box::new(EmptyCallbacks {}), config).unwrap();
     let topic = Topic {
         name: "test_static".to_string(),
     };
-    let res = consumer.subscribe(&[topic], Box::new(EmptyCallbacks {}));
+    let res = consumer.subscribe(&[topic]);
     assert!(res.is_ok());
     println!("Subscribed");
     for _ in 0..20 {

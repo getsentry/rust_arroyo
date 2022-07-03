@@ -1,20 +1,21 @@
 use clap::{App, Arg};
 use log::{debug, info};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
-use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::Consumer;
+//use rdkafka::consumer::stream_consumer::StreamConsumer;
+//use rdkafka::consumer::Consumer;
 use rdkafka::producer::FutureProducer;
 use rdkafka::util::get_rdkafka_version;
+use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::AssignmentCallbacks;
+use rust_arroyo::processing::create_streaming;
 use rust_arroyo::processing::strategies::async_noop::AsyncNoopCommit;
 use rust_arroyo::processing::strategies::async_noop::CustomContext;
-use rust_arroyo::processing::StreamingStreamProcessor;
 use rust_arroyo::types::{Partition, Topic};
 use std::collections::HashMap;
 use std::time::SystemTime;
 
 // A type alias with your custom consumer can be created for convenience.
-type LoggingConsumer = StreamConsumer<CustomContext>;
+//type LoggingConsumer = StreamConsumer<CustomContext>;
 
 struct EmptyCallbacks {}
 impl AssignmentCallbacks for EmptyCallbacks {
@@ -33,23 +34,23 @@ async fn consume_and_produce(
     dest_topic: &str,
     batch_size: usize,
 ) {
-    let context = CustomContext {};
+    //let context = CustomContext {};
 
-    let consumer: LoggingConsumer = ClientConfig::new()
-        .set("group.id", group_id)
-        .set("bootstrap.servers", brokers)
-        .set("enable.partition.eof", "false")
-        .set("session.timeout.ms", "6000")
-        .set("enable.auto.commit", "false")
-        //.set("statistics.interval.ms", "30000")
-        .set("auto.offset.reset", "earliest")
-        .set_log_level(RDKafkaLogLevel::Warning)
-        .create_with_context(context)
-        .expect("Consumer creation failed");
+    //let consumer: LoggingConsumer = ClientConfig::new()
+    //    .set("group.id", group_id)
+    //    .set("bootstrap.servers", brokers)
+    //    .set("enable.partition.eof", "false")
+    //    .set("session.timeout.ms", "6000")
+    //    .set("enable.auto.commit", "false")
+    //    //.set("statistics.interval.ms", "30000")
+    //    .set("auto.offset.reset", "earliest")
+    //    .set_log_level(RDKafkaLogLevel::Warning)
+    //    .create_with_context(context)
+    //    .expect("Consumer creation failed");
 
-    consumer
-        .subscribe(&[source_topic])
-        .expect("Can't subscribe to specified topics");
+    //consumer
+    //    .subscribe(&[source_topic])
+    //    .expect("Can't subscribe to specified topics");
 
     let topic = Topic {
         name: source_topic.to_string(),
@@ -77,12 +78,15 @@ async fn consume_and_produce(
         source_topic: source_topic.to_string(),
     };
 
-    let mut processor = StreamingStreamProcessor {
-        consumer,
-        strategy,
-        message: None,
-        shutdown_requested: false,
-    };
+    let config = KafkaConfig::new_consumer_config(
+        vec![brokers.to_string()],
+        group_id.to_string(),
+        "earliest".to_string(),
+        false,
+        None,
+    );
+
+    let mut processor = create_streaming(config, strategy, topic);
 
     match processor.run().await {
         Ok(_) => {}

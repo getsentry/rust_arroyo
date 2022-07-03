@@ -1,18 +1,15 @@
 pub mod strategies;
 
-use crate::backends::kafka::create_kafka_message;
+use crate::backends::kafka::config::KafkaConfig;
+use crate::backends::kafka::create_and_subscribe;
 use crate::backends::kafka::types::KafkaPayload;
+use crate::backends::kafka::KafkaConsumer;
 use crate::backends::{AssignmentCallbacks, Consumer};
-use crate::processing::strategies::async_noop::build_topic_partitions;
 use crate::processing::strategies::async_noop::AsyncNoopCommit;
-use crate::processing::strategies::async_noop::CustomContext;
 use crate::types::{Message, Partition, Topic};
 use async_mutex::Mutex;
 use futures::executor::block_on;
-use log::{error, info};
-use rdkafka::consumer::stream_consumer::StreamConsumer;
-use rdkafka::consumer::CommitMode;
-use rdkafka::consumer::Consumer as RdConsumer;
+use log::error;
 use std::collections::HashMap;
 use std::mem::replace;
 use std::sync::Arc;
@@ -86,6 +83,26 @@ pub struct StreamProcessor<'a, TPayload: Clone> {
     shutdown_requested: bool,
 }
 
+pub fn create<'a>(
+    config: KafkaConfig,
+    processing_factory: Box<dyn ProcessingStrategyFactory<KafkaPayload>>,
+) -> StreamProcessor<'a, KafkaPayload> {
+    let strategies = Arc::new(Mutex::new(Strategies {
+        processing_factory,
+        strategy: None,
+    }));
+    let callbacks: Box<dyn AssignmentCallbacks> = Box::new(Callbacks::new(strategies.clone()));
+
+    let consumer = create_and_subscribe(callbacks, config).unwrap();
+
+    StreamProcessor {
+        consumer: Box::new(consumer),
+        strategies,
+        message: None,
+        shutdown_requested: false,
+    }
+}
+
 impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     pub fn new(
         consumer: Box<dyn Consumer<'a, TPayload> + 'a>,
@@ -105,9 +122,9 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     }
 
     pub fn subscribe(&mut self, topic: Topic) {
-        let callbacks: Box<dyn AssignmentCallbacks> =
-            Box::new(Callbacks::new(self.strategies.clone()));
-        let _ = self.consumer.subscribe(&[topic], callbacks);
+        //let callbacks: Box<dyn AssignmentCallbacks> =
+        //    Box::new(Callbacks::new(self.strategies.clone()));
+        let _ = self.consumer.subscribe(&[topic]);
     }
 
     pub async fn run_once(&mut self) -> Result<(), RunError> {
@@ -220,8 +237,33 @@ impl<'a, TPayload: 'static + Clone> StreamProcessor<'a, TPayload> {
     }
 }
 
+struct EmptyCallbacks {}
+impl AssignmentCallbacks for EmptyCallbacks {
+    fn on_assign(&mut self, _: HashMap<Partition, u64>) {
+        println!("Assignment");
+    }
+    fn on_revoke(&mut self, _: Vec<Partition>) {
+        println!("Revoked");
+    }
+}
+
+pub fn create_streaming<'a>(
+    config: KafkaConfig,
+    strategy: AsyncNoopCommit,
+    topic: Topic,
+) -> StreamingStreamProcessor {
+    let mut consumer = create_and_subscribe(Box::new(EmptyCallbacks {}), config).unwrap();
+    consumer.subscribe(&[topic]).unwrap();
+    StreamingStreamProcessor {
+        consumer,
+        strategy,
+        message: None,
+        shutdown_requested: false,
+    }
+}
+
 pub struct StreamingStreamProcessor {
-    pub consumer: StreamConsumer<CustomContext>,
+    pub consumer: KafkaConsumer,
     pub strategy: AsyncNoopCommit,
     pub message: Option<Message<KafkaPayload>>,
     pub shutdown_requested: bool,
@@ -230,7 +272,6 @@ pub struct StreamingStreamProcessor {
 impl StreamingStreamProcessor {
     pub async fn run_once(&mut self) -> Result<(), RunError> {
         let message_carried_over = self.message.is_some();
-
         if message_carried_over {
             // If a message was carried over from the previous run, the consumer
             // should be paused and not returning any messages on ``poll``.
@@ -247,7 +288,7 @@ impl StreamingStreamProcessor {
             match msg {
                 Ok(m) => match m {
                     Ok(msg) => {
-                        self.message = Some(create_kafka_message(msg));
+                        self.message = Some(msg);
                     }
                     Err(_) => return Err(RunError::PollError),
                 },
@@ -259,9 +300,15 @@ impl StreamingStreamProcessor {
         match commit_request {
             None => {}
             Some(request) => {
-                let part_list = build_topic_partitions(request);
-                self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
-                info!("Committed: {:?}", part_list);
+                //let part_list = build_topic_partitions(request);
+                self.consumer
+                    .stage_positions(request.positions)
+                    .await
+                    .unwrap();
+                self.consumer.commit_positions().await.unwrap();
+
+                //self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                //info!("Committed: {:?}", part_list);
             }
         };
 
@@ -279,23 +326,33 @@ impl StreamingStreamProcessor {
                 Ok(m) => {
                     match self.strategy.poll().await {
                         Some(partition_list) => {
-                            let part_list = build_topic_partitions(partition_list);
-                            self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
-                            info!("Committed: {:?}", part_list);
+                            //let part_list = build_topic_partitions(partition_list);
+                            //self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                            self.consumer
+                                .stage_positions(partition_list.positions)
+                                .await
+                                .unwrap();
+                            self.consumer.commit_positions().await.unwrap();
+                            //info!("Committed: {:?}", part_list);
                         }
                         None => {}
                     }
 
-                    self.strategy.submit(create_kafka_message(m)).await;
+                    self.strategy.submit(m).await;
                 }
             },
             Err(_) => {
                 error!("timeoout, flushing batch");
                 match self.strategy.poll().await {
                     Some(partition_list) => {
-                        let part_list = build_topic_partitions(partition_list);
-                        self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
-                        info!("Committed: {:?}", part_list);
+                        //let part_list = build_topic_partitions(partition_list);
+                        //self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
+                        //info!("Committed: {:?}", part_list);
+                        self.consumer
+                            .stage_positions(partition_list.positions)
+                            .await
+                            .unwrap();
+                        self.consumer.commit_positions().await.unwrap();
                     }
                     None => {}
                 }

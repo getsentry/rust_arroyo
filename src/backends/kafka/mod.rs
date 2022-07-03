@@ -28,7 +28,6 @@ pub mod types;
 
 #[derive(Eq, Hash, PartialEq)]
 enum KafkaConsumerState {
-    NotSubscribed,
     Consuming,
     #[allow(dead_code)]
     Error,
@@ -44,7 +43,6 @@ impl KafkaConsumerState {
     fn assert_consuming_state(&self) -> Result<(), ConsumerError> {
         match self {
             KafkaConsumerState::Closed => Err(ConsumerError::ConsumerClosed),
-            KafkaConsumerState::NotSubscribed => Err(ConsumerError::NotSubscribed),
             KafkaConsumerState::Error => Err(ConsumerError::ConsumerErrored),
             _ => Ok(()),
         }
@@ -136,59 +134,53 @@ impl ConsumerContext for CustomContext {
     fn commit_callback(&self, _: KafkaResult<()>, _offsets: &TopicPartitionList) {}
 }
 
+pub fn create_and_subscribe(
+    callbacks: Box<dyn AssignmentCallbacks>,
+    config: KafkaConfig,
+) -> Result<KafkaConsumer, ConsumerError> {
+    let offsets = Arc::new(Mutex::new(HashMap::new()));
+    let context = CustomContext {
+        callbacks: Mutex::new(callbacks),
+        consumer_offsets: offsets.clone(),
+    };
+    let mut config_obj: ClientConfig = config.into();
+
+    let consumer: StreamConsumer<CustomContext> = config_obj
+        .set_log_level(RDKafkaLogLevel::Debug)
+        .create_with_context(context)?;
+
+    Ok(KafkaConsumer {
+        consumer,
+        state: KafkaConsumerState::Consuming,
+        offsets,
+        staged_offsets: HashMap::new(),
+    })
+}
+
 pub struct KafkaConsumer {
     // TODO: This has to be an option as of now because rdkafka requires
     // callbacks during the instantiation. While the streaming processor
     // can only pass the callbacks during the subscribe call.
     // So we need to build the kafka consumer upon subscribe and not
     // in the constructor.
-    consumer: Option<StreamConsumer<CustomContext>>,
-    config: KafkaConfig,
+    consumer: StreamConsumer<CustomContext>,
     state: KafkaConsumerState,
     offsets: Arc<Mutex<HashMap<Partition, u64>>>,
     staged_offsets: HashMap<Partition, Position>,
 }
 
-impl KafkaConsumer {
-    pub fn new(config: KafkaConfig) -> Self {
-        Self {
-            consumer: None,
-            config,
-            state: KafkaConsumerState::NotSubscribed,
-            offsets: Arc::new(Mutex::new(HashMap::new())),
-            staged_offsets: HashMap::new(),
-        }
-    }
-}
-
 #[async_trait]
 impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
-    fn subscribe(
-        &mut self,
-        topics: &[Topic],
-        callbacks: Box<dyn AssignmentCallbacks>,
-    ) -> Result<(), ConsumerError> {
-        let context = CustomContext {
-            callbacks: Mutex::new(callbacks),
-            consumer_offsets: self.offsets.clone(),
-        };
-
-        let mut config_obj: ClientConfig = self.config.clone().into();
-
-        let consumer: StreamConsumer<CustomContext> = config_obj
-            .set_log_level(RDKafkaLogLevel::Debug)
-            .create_with_context(context)?;
+    fn subscribe(&mut self, topics: &[Topic]) -> Result<(), ConsumerError> {
         let topic_str: Vec<&str> = topics.iter().map(|t| t.name.as_ref()).collect();
-        consumer.subscribe(&topic_str)?;
-        self.consumer = Some(consumer);
-        self.state = KafkaConsumerState::Consuming;
+        self.consumer.subscribe(&topic_str)?;
         Ok(())
     }
 
     fn unsubscribe(&mut self) -> Result<(), ConsumerError> {
         self.state.assert_consuming_state()?;
-        let consumer = self.consumer.as_mut().unwrap();
-        consumer.unsubscribe();
+        //let consumer = self.consumer.as_mut().unwrap();
+        self.consumer.unsubscribe();
 
         Ok(())
     }
@@ -199,8 +191,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     ) -> Result<Option<ArroyoMessage<KafkaPayload>>, ConsumerError> {
         self.state.assert_consuming_state()?;
 
-        let consumer = self.consumer.as_mut().unwrap();
-        match timeout(ttl.unwrap_or(Duration::from_secs(2)), consumer.recv()).await {
+        //let consumer = self.consumer.as_mut().unwrap();
+        match timeout(ttl.unwrap_or(Duration::from_secs(2)), self.consumer.recv()).await {
             Ok(result) => {
                 let msg = result?;
                 Ok(Some(create_kafka_message(msg)))
@@ -210,8 +202,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
     }
 
     async fn recv(&mut self) -> Result<ArroyoMessage<KafkaPayload>, ConsumerError> {
-        let consumer = self.consumer.as_mut().unwrap();
-        match consumer.recv().await {
+        //let consumer = self.consumer.as_mut().unwrap();
+        match self.consumer.recv().await {
             Ok(result) => Ok(create_kafka_message(result)),
             Err(e) => Err(ConsumerError::BrokerError(Box::new(e))),
         }
@@ -234,9 +226,9 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
             );
         }
 
-        let consumer = self.consumer.as_ref().unwrap();
+        //let consumer = self.consumer.as_ref().unwrap();
         let topic_partition_list = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-        consumer.pause(&topic_partition_list)?;
+        self.consumer.pause(&topic_partition_list)?;
 
         Ok(())
     }
@@ -252,8 +244,8 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
             topic_partition_list.add_partition(&partition.topic.name, partition.index as i32);
         }
 
-        let consumer = self.consumer.as_mut().unwrap();
-        consumer.resume(&topic_partition_list)?;
+        //let consumer = self.consumer.as_mut().unwrap();
+        self.consumer.resume(&topic_partition_list)?;
 
         Ok(())
     }
@@ -294,9 +286,9 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
             );
         }
 
-        let consumer = self.consumer.as_mut().unwrap();
+        //let consumer = self.consumer.as_mut().unwrap();
         let partitions = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-        let _ = consumer.commit(&partitions, CommitMode::Sync).unwrap();
+        let _ = self.consumer.commit(&partitions, CommitMode::Sync).unwrap();
 
         // Clear staged offsets
         let cleared_map = HashMap::new();
@@ -307,7 +299,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
 
     fn close(&mut self) {
         self.state = KafkaConsumerState::Closed;
-        self.consumer = None;
+        //self.consumer = None;
     }
 
     fn closed(&self) -> bool {
@@ -317,8 +309,9 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
 
 #[cfg(test)]
 mod tests {
-    use super::{AssignmentCallbacks, KafkaConsumer};
+    use super::AssignmentCallbacks;
     use crate::backends::kafka::config::KafkaConfig;
+    use crate::backends::kafka::create_and_subscribe;
     use crate::backends::Consumer;
     use crate::types::{Partition, Position, Topic};
     use chrono::Utc;
@@ -374,12 +367,12 @@ mod tests {
             false,
             None,
         );
-        let mut consumer = KafkaConsumer::new(configuration);
+        let mut consumer =
+            create_and_subscribe(Box::new(EmptyCallbacks {}), configuration).unwrap();
         let topic = Topic {
             name: "test".to_string(),
         };
-        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
-        consumer.subscribe(&[topic], my_callbacks).unwrap();
+        consumer.subscribe(&[topic]).unwrap();
     }
 
     #[tokio::test]
@@ -392,13 +385,13 @@ mod tests {
             false,
             None,
         );
-        let mut consumer = KafkaConsumer::new(configuration);
+        let mut consumer =
+            create_and_subscribe(Box::new(EmptyCallbacks {}), configuration).unwrap();
         let topic = Topic {
             name: "test".to_string(),
         };
-        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
         assert!(consumer.tell().is_err()); // Not subscribed yet
-        consumer.subscribe(&[topic], my_callbacks).unwrap();
+        consumer.subscribe(&[topic]).unwrap();
         assert_eq!(consumer.tell().unwrap(), HashMap::new());
 
         // Getting the assignment may take a while, wait up to 5 seconds
@@ -427,13 +420,13 @@ mod tests {
             None,
         );
 
-        let mut consumer = KafkaConsumer::new(configuration);
+        let mut consumer =
+            create_and_subscribe(Box::new(EmptyCallbacks {}), configuration).unwrap();
         let topic = Topic {
             name: "test".to_string(),
         };
 
-        let my_callbacks: Box<dyn AssignmentCallbacks> = Box::new(EmptyCallbacks {});
-        consumer.subscribe(&[topic.clone()], my_callbacks).unwrap();
+        consumer.subscribe(&[topic.clone()]).unwrap();
 
         let positions = HashMap::from([(
             Partition { topic, index: 0 },

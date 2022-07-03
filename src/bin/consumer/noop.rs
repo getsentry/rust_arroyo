@@ -4,11 +4,11 @@ use clap::{App, Arg};
 use log::info;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
-use rust_arroyo::backends::kafka::KafkaConsumer;
+//use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::backends::AssignmentCallbacks;
+use rust_arroyo::processing::create;
 use rust_arroyo::processing::strategies::ProcessingStrategy;
 use rust_arroyo::processing::strategies::{noop, ProcessingStrategyFactory};
-use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::{Partition, Topic};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -96,12 +96,13 @@ async fn main() {
         false,
         None,
     );
-    let consumer = KafkaConsumer::new(config);
+    //let consumer = KafkaConsumer::new(config);
     let topic = Topic {
         name: source_topic.to_string(),
     };
-    let mut stream_processor =
-        StreamProcessor::new(Box::new(consumer), Box::new(StrategyFactory { batch_time }));
+    //let mut stream_processor =
+    //    StreamProcessor::new(Box::new(consumer), Box::new(StrategyFactory { batch_time }));
+    let mut stream_processor = create(config, Box::new(StrategyFactory { batch_time }));
 
     info!("Starting no-op consumer");
     stream_processor.subscribe(topic);

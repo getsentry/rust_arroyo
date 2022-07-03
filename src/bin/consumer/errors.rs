@@ -7,11 +7,10 @@ use log::debug;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::producer::KafkaProducer;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
-use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::backends::AssignmentCallbacks;
+use rust_arroyo::processing::create;
 use rust_arroyo::processing::strategies::ProcessingStrategyFactory;
 use rust_arroyo::processing::strategies::{CommitRequest, MessageRejected, ProcessingStrategy};
-use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::Message;
 use rust_arroyo::types::{Partition, Topic, TopicOrPartition};
 use std::collections::HashMap;
@@ -145,12 +144,19 @@ async fn main() {
         false,
         None,
     );
-    let consumer = KafkaConsumer::new(config);
+    //let consumer = KafkaConsumer::new(config);
     let topic = Topic {
         name: source_topic.to_string(),
     };
-    let mut stream_processor = StreamProcessor::new(
-        Box::new(consumer),
+    //let mut stream_processor = StreamProcessor::new(
+    //    Box::new(consumer),
+    //    Box::new(StrategyFactory {
+    //        destination_topic: dest_topic.to_string(),
+    //        broker: brokers.to_string(),
+    //    }),
+    //);
+    let mut stream_processor = create(
+        config,
         Box::new(StrategyFactory {
             destination_topic: dest_topic.to_string(),
             broker: brokers.to_string(),

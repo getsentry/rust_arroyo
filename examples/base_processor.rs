@@ -7,7 +7,7 @@ use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::processing::strategies::{
     CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
 };
-use rust_arroyo::processing::StreamProcessor;
+use rust_arroyo::processing::{create, StreamProcessor};
 use rust_arroyo::types::{Message, Partition, Position, Topic};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -70,12 +70,12 @@ fn main() {
         false,
         None,
     );
-    let consumer = Box::new(KafkaConsumer::new(config));
+    //let consumer = Box::new(KafkaConsumer::new(config));
     let topic = Topic {
         name: "test_static".to_string(),
     };
-
-    let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
+    let mut processor = create(config, Box::new(TestFactory {}));
+    //let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
     processor.subscribe(topic);
     for _ in 0..20 {
         let _ = processor.run_once();
