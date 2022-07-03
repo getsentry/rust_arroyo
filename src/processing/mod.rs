@@ -1,9 +1,11 @@
 pub mod strategies;
 
 use crate::backends::kafka::config::KafkaConfig;
-use crate::backends::kafka::create_and_subscribe;
+use rdkafka::consumer::Consumer as RDConsumer;
+use crate::backends::kafka::{create_and_subscribe, create_kafka_message};
 use crate::backends::kafka::types::KafkaPayload;
 use crate::backends::kafka::KafkaConsumer;
+use rdkafka::consumer::CommitMode;
 use crate::backends::{AssignmentCallbacks, Consumer};
 use crate::processing::strategies::async_noop::AsyncNoopCommit;
 use crate::types::{Message, Partition, Topic};
@@ -16,6 +18,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use strategies::{ProcessingStrategy, ProcessingStrategyFactory};
 use tokio::time::timeout;
+
+use self::strategies::async_noop::build_topic_partitions;
 
 #[derive(Debug, Clone)]
 pub struct InvalidState;
@@ -275,7 +279,7 @@ impl StreamingStreamProcessor {
         if message_carried_over {
             // If a message was carried over from the previous run, the consumer
             // should be paused and not returning any messages on ``poll``.
-            let res = timeout(Duration::from_secs(2), self.consumer.recv()).await;
+            let res = timeout(Duration::from_secs(2), self.consumer.consumer.recv()).await;
             match res {
                 Err(_) => {}
                 Ok(_) => return Err(RunError::InvalidState),
@@ -283,12 +287,12 @@ impl StreamingStreamProcessor {
         } else {
             // Otherwise, we need to try fetch a new message from the consumer,
             // even if there is no active assignment and/or processing strategy.
-            let msg = timeout(Duration::from_secs(2), self.consumer.recv()).await;
+            let msg = timeout(Duration::from_secs(2), self.consumer.consumer.recv()).await;
             //TODO: Support errors properly
             match msg {
                 Ok(m) => match m {
                     Ok(msg) => {
-                        self.message = Some(msg);
+                        self.message = Some(create_kafka_message(msg));
                     }
                     Err(_) => return Err(RunError::PollError),
                 },
@@ -319,47 +323,6 @@ impl StreamingStreamProcessor {
         Ok(())
     }
 
-    pub async fn _run_once(&mut self) -> Result<(), RunError> {
-        match timeout(Duration::from_secs(2), self.consumer.recv()).await {
-            Ok(result) => match result {
-                Err(e) => panic!("Kafka error: {}", e),
-                Ok(m) => {
-                    match self.strategy.poll().await {
-                        Some(partition_list) => {
-                            //let part_list = build_topic_partitions(partition_list);
-                            //self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
-                            self.consumer
-                                .stage_positions(partition_list.positions)
-                                .await
-                                .unwrap();
-                            self.consumer.commit_positions().await.unwrap();
-                            //info!("Committed: {:?}", part_list);
-                        }
-                        None => {}
-                    }
-
-                    self.strategy.submit(m).await;
-                }
-            },
-            Err(_) => {
-                error!("timeoout, flushing batch");
-                match self.strategy.poll().await {
-                    Some(partition_list) => {
-                        //let part_list = build_topic_partitions(partition_list);
-                        //self.consumer.commit(&part_list, CommitMode::Sync).unwrap();
-                        //info!("Committed: {:?}", part_list);
-                        self.consumer
-                            .stage_positions(partition_list.positions)
-                            .await
-                            .unwrap();
-                        self.consumer.commit_positions().await.unwrap();
-                    }
-                    None => {}
-                }
-            }
-        }
-        Ok(())
-    }
 
     /// The main run loop, see class docstring for more information.
     pub async fn run(&mut self) -> Result<(), RunError> {
