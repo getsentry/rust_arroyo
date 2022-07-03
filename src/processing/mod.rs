@@ -279,7 +279,7 @@ impl StreamingStreamProcessor {
         if message_carried_over {
             // If a message was carried over from the previous run, the consumer
             // should be paused and not returning any messages on ``poll``.
-            let res = timeout(Duration::from_secs(2), self.consumer.consumer.recv()).await;
+            let res = timeout(Duration::from_secs(2), self.consumer.recv()).await;
             match res {
                 Err(_) => {}
                 Ok(_) => return Err(RunError::InvalidState),
@@ -287,12 +287,12 @@ impl StreamingStreamProcessor {
         } else {
             // Otherwise, we need to try fetch a new message from the consumer,
             // even if there is no active assignment and/or processing strategy.
-            let msg = timeout(Duration::from_secs(2), self.consumer.consumer.recv()).await;
+            let msg = timeout(Duration::from_secs(2), self.consumer.recv()).await;
             //TODO: Support errors properly
             match msg {
                 Ok(m) => match m {
                     Ok(msg) => {
-                        self.message = Some(create_kafka_message(msg));
+                        self.message = Some(msg);
                     }
                     Err(_) => return Err(RunError::PollError),
                 },
@@ -304,17 +304,17 @@ impl StreamingStreamProcessor {
         match commit_request {
             None => {}
             Some(request) => {
-                let part_list = build_topic_partitions(request);
-                //self.consumer
-                //    .stage_positions(request.positions)
-                //    .await
-                //    .unwrap();
-                //self.consumer.commit_positions().await.unwrap();
-
+                //let part_list = build_topic_partitions(request);
                 self.consumer
-                    .consumer
-                    .commit(&part_list, CommitMode::Sync)
+                    .stage_positions(request.positions)
+                    .await
                     .unwrap();
+                self.consumer.commit_positions().await.unwrap();
+
+                //self.consumer
+                //    .consumer
+                //    .commit(&part_list, CommitMode::Sync)
+                //    .unwrap();
                 //info!("Committed: {:?}", part_list);
             }
         };

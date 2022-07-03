@@ -37,14 +37,14 @@ impl KafkaConfig {
         config
             .config_map
             .insert("auto.offset.reset".to_string(), auto_offset_reset);
-        //config.config_map.insert(
-        //    "queued.max.messages.kbytes".to_string(),
-        //    DEFAULT_QUEUED_MAX_MESSAGE_KBYTES.to_string(),
-        //);
-        //config.config_map.insert(
-        //    "queued.min.messages".to_string(),
-        //    DEFAULT_QUEUED_MIN_MESSAGES.to_string(),
-        //);
+        config.config_map.insert(
+            "queued.max.messages.kbytes".to_string(),
+            DEFAULT_QUEUED_MAX_MESSAGE_KBYTES.to_string(),
+        );
+        config.config_map.insert(
+            "queued.min.messages".to_string(),
+            DEFAULT_QUEUED_MIN_MESSAGES.to_string(),
+        );
 
         apply_override_params(config, override_params)
     }

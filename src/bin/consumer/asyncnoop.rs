@@ -78,17 +78,17 @@ async fn consume_and_produce(
         source_topic: source_topic.to_string(),
     };
 
-    let override_p = HashMap::from([
-        ("enable.auto.commit".to_string(), "false".to_string()),
-        ("enable.partition.eof".to_string(), "false".to_string()),
-    ]);
+    //let override_p = HashMap::from([
+    //    ("enable.auto.commit".to_string(), "false".to_string()),
+    //    ("enable.partition.eof".to_string(), "false".to_string()),
+    //]);
 
     let config = KafkaConfig::new_consumer_config(
         vec![brokers.to_string()],
         group_id.to_string(),
         "earliest".to_string(),
         false,
-        Some(override_p),
+        None,
     );
 
     let mut processor = create_streaming(config, strategy, topic);
