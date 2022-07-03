@@ -200,7 +200,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
             Err(_) => Ok(None),
         }
     }
-    
+
     async fn recv(&mut self) -> Result<ArroyoMessage<KafkaPayload>, ConsumerError> {
         //let consumer = self.consumer.as_mut().unwrap();
         match self.consumer.recv().await {

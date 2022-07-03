@@ -1,17 +1,17 @@
 pub mod strategies;
 
 use crate::backends::kafka::config::KafkaConfig;
-use rdkafka::consumer::Consumer as RDConsumer;
-use crate::backends::kafka::{create_and_subscribe, create_kafka_message};
 use crate::backends::kafka::types::KafkaPayload;
 use crate::backends::kafka::KafkaConsumer;
-use rdkafka::consumer::CommitMode;
+use crate::backends::kafka::{create_and_subscribe, create_kafka_message};
 use crate::backends::{AssignmentCallbacks, Consumer};
 use crate::processing::strategies::async_noop::AsyncNoopCommit;
 use crate::types::{Message, Partition, Topic};
 use async_mutex::Mutex;
 use futures::executor::block_on;
 use log::error;
+use rdkafka::consumer::CommitMode;
+use rdkafka::consumer::Consumer as RDConsumer;
 use std::collections::HashMap;
 use std::mem::replace;
 use std::sync::Arc;
@@ -322,7 +322,6 @@ impl StreamingStreamProcessor {
         }
         Ok(())
     }
-
 
     /// The main run loop, see class docstring for more information.
     pub async fn run(&mut self) -> Result<(), RunError> {
