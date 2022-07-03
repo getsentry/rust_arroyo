@@ -1,16 +1,16 @@
 extern crate rust_arroyo;
 
 use crate::rust_arroyo::backends::Producer;
+use async_trait::async_trait;
 use clap::{App, Arg};
 use log::debug;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::producer::KafkaProducer;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
-use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::backends::AssignmentCallbacks;
+use rust_arroyo::processing::create;
 use rust_arroyo::processing::strategies::ProcessingStrategyFactory;
 use rust_arroyo::processing::strategies::{CommitRequest, MessageRejected, ProcessingStrategy};
-use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::Message;
 use rust_arroyo::types::{Partition, Topic, TopicOrPartition};
 use std::collections::HashMap;
@@ -26,13 +26,16 @@ struct Next {
     destination: TopicOrPartition,
     producer: KafkaProducer,
 }
+#[async_trait]
 impl ProcessingStrategy<KafkaPayload> for Next {
-    fn poll(&mut self) -> Option<CommitRequest> {
+    async fn poll(&mut self) -> Option<CommitRequest> {
         None
     }
 
-    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
-        self.producer.produce(&self.destination, &message.payload);
+    async fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
+        self.producer
+            .produce(&self.destination, &message.payload)
+            .await;
         debug!("Produced message offset {}", message.offset);
         Ok(())
     }
@@ -65,7 +68,8 @@ impl ProcessingStrategyFactory<KafkaPayload> for StrategyFactory {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = App::new("consumer example")
         .version(option_env!("CARGO_PKG_VERSION").unwrap_or(""))
         .about("Simple command line consumer")
@@ -140,12 +144,19 @@ fn main() {
         false,
         None,
     );
-    let consumer = KafkaConsumer::new(config);
+    //let consumer = KafkaConsumer::new(config);
     let topic = Topic {
         name: source_topic.to_string(),
     };
-    let mut stream_processor = StreamProcessor::new(
-        Box::new(consumer),
+    //let mut stream_processor = StreamProcessor::new(
+    //    Box::new(consumer),
+    //    Box::new(StrategyFactory {
+    //        destination_topic: dest_topic.to_string(),
+    //        broker: brokers.to_string(),
+    //    }),
+    //);
+    let mut stream_processor = create(
+        config,
         Box::new(StrategyFactory {
             destination_topic: dest_topic.to_string(),
             broker: brokers.to_string(),
@@ -153,5 +164,5 @@ fn main() {
     );
 
     stream_processor.subscribe(topic);
-    stream_processor.run().unwrap();
+    stream_processor.run().await.unwrap();
 }

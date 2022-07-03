@@ -33,7 +33,8 @@ fn generate_metric() -> String {
     r#"{"org_id": 1, "project_id": 1, "metric_id": 1000, "timestamp:: 1656183801, "tags": {"some_tag": "some_tag_value"}}".to_string()"#.to_string()
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = App::new("consumer example")
         .version(option_env!("CARGO_PKG_VERSION").unwrap_or(""))
         .about("Simple command line consumer")
@@ -82,7 +83,7 @@ fn main() {
             headers: None,
             payload: Some(generate_metric().as_bytes().to_vec()),
         };
-        producer.produce(&destination, &payload);
+        producer.produce(&destination, &payload).await;
         producer.poll();
     }
 

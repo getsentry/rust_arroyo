@@ -1,6 +1,7 @@
 use crate::backends::kafka::types::KafkaPayload;
 use crate::processing::strategies::{CommitRequest, MessageRejected, ProcessingStrategy};
 use crate::types::{Message, Partition, Position};
+use async_trait::async_trait;
 use log::info;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
@@ -10,12 +11,13 @@ pub struct NoopCommit {
     last_commit_time: SystemTime,
     commit_frequency: Duration,
 }
+#[async_trait]
 impl ProcessingStrategy<KafkaPayload> for NoopCommit {
-    fn poll(&mut self) -> Option<CommitRequest> {
+    async fn poll(&mut self) -> Option<CommitRequest> {
         self.commit(false)
     }
 
-    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
+    async fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
         let next_offset = message.next_offset();
         self.partitions.insert(
             message.partition,
@@ -79,8 +81,8 @@ mod tests {
     use std::thread::sleep;
     use std::time::{Duration, SystemTime};
 
-    #[test]
-    fn test_noop() {
+    #[tokio::test]
+    async fn test_noop() {
         env_logger::init();
         let partition1 = Partition {
             topic: Topic {
@@ -128,11 +130,11 @@ mod tests {
                 timestamp,
             },
         );
-        noop.submit(m1).expect("Failed to submit");
-        assert_eq!(noop.poll(), None);
+        noop.submit(m1).await.expect("Failed to submit");
+        assert_eq!(noop.poll().await, None);
 
         sleep(Duration::from_secs(2));
-        assert_eq!(noop.poll(), Some(commit_req1));
+        assert_eq!(noop.poll().await, Some(commit_req1));
 
         let mut commit_req2 = CommitRequest {
             positions: Default::default(),
@@ -144,8 +146,8 @@ mod tests {
                 timestamp,
             },
         );
-        noop.submit(m2).expect("Failed to submit");
-        assert_eq!(noop.poll(), None);
+        noop.submit(m2).await.expect("Failed to submit");
+        assert_eq!(noop.poll().await, None);
         assert_eq!(noop.join(Some(Duration::from_secs(5))), Some(commit_req2))
     }
 }

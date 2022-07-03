@@ -1,12 +1,13 @@
 extern crate rust_arroyo;
 
+use async_trait::async_trait;
 use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
 use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::processing::strategies::{
     CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
 };
-use rust_arroyo::processing::StreamProcessor;
+use rust_arroyo::processing::{create, StreamProcessor};
 use rust_arroyo::types::{Message, Partition, Position, Topic};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -14,8 +15,9 @@ use std::time::Duration;
 struct TestStrategy {
     partitions: HashMap<Partition, Position>,
 }
+#[async_trait]
 impl ProcessingStrategy<KafkaPayload> for TestStrategy {
-    fn poll(&mut self) -> Option<CommitRequest> {
+    async fn poll(&mut self) -> Option<CommitRequest> {
         println!("POLL");
         if !self.partitions.is_empty() {
             // TODO: Actually make commit work. It does not seem
@@ -30,7 +32,7 @@ impl ProcessingStrategy<KafkaPayload> for TestStrategy {
         }
     }
 
-    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
+    async fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
         println!("SUBMIT {}", message);
         self.partitions.insert(
             message.partition,
@@ -68,12 +70,12 @@ fn main() {
         false,
         None,
     );
-    let consumer = Box::new(KafkaConsumer::new(config));
+    //let consumer = Box::new(KafkaConsumer::new(config));
     let topic = Topic {
         name: "test_static".to_string(),
     };
-
-    let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
+    let mut processor = create(config, Box::new(TestFactory {}));
+    //let mut processor = StreamProcessor::new(consumer, Box::new(TestFactory {}));
     processor.subscribe(topic);
     for _ in 0..20 {
         let _ = processor.run_once();

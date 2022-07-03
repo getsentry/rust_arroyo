@@ -20,6 +20,8 @@ cadence = "0.29.0"
 lazy_static = "1.4.0"
 parking_lot = "0.10.0"
 rand="0.8.5"
+async-trait="0.1.56"
+async-mutex = "1.4.0"
 
 [[bin]]
 name = "errors-consumer"
@@ -36,3 +38,7 @@ path = "src/bin/consumer/noop.rs"
 [[bin]]
 name = "generator"
 path = "src/bin/mocks/generate_data.rs"
+
+[[bin]]
+name = "async-noop-consumer"
+path = "src/bin/consumer/asyncnoop.rs"
