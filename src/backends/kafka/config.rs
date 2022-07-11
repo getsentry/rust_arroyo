@@ -75,7 +75,7 @@ fn apply_override_params(
 
 #[cfg(test)]
 mod tests {
-    use super::{KafkaConfig, DEFAULT_QUEUED_MIN_MESSAGES};
+    use super::KafkaConfig;
     use rdkafka::config::ClientConfig as RdKafkaConfig;
     use std::collections::HashMap;
 
@@ -93,10 +93,6 @@ mod tests {
         );
 
         let rdkafka_config: RdKafkaConfig = config.into();
-        assert_eq!(
-            rdkafka_config.get("queued.min.messages"),
-            Some(&DEFAULT_QUEUED_MIN_MESSAGES.to_string()[..])
-        );
         assert_eq!(
             rdkafka_config.get("queued.max.messages.kbytes"),
             Some("1000000")
