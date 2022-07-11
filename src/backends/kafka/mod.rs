@@ -287,7 +287,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
 
         let consumer = self.consumer.as_mut().unwrap();
         let partitions = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-        let _ = consumer.commit(&partitions, CommitMode::Sync).unwrap();
+        consumer.commit(&partitions, CommitMode::Sync).unwrap();
 
         // Clear staged offsets
         let cleared_map = HashMap::new();

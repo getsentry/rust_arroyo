@@ -1,9 +1,6 @@
 use rdkafka::config::ClientConfig as RdKafkaConfig;
 use std::collections::HashMap;
 
-const DEFAULT_QUEUED_MAX_MESSAGE_KBYTES: u32 = 50_000;
-const DEFAULT_QUEUED_MIN_MESSAGES: u32 = 10_000;
-
 #[derive(Debug, Clone)]
 pub struct KafkaConfig {
     config_map: HashMap<String, String>,
