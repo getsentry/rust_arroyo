@@ -11,6 +11,7 @@ use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use rdkafka::util::get_rdkafka_version;
+use serde::{Deserialize, Serialize};
 use std::boxed::Box;
 use std::cmp::max;
 use std::collections::HashMap;
@@ -79,6 +80,49 @@ async fn flush_batch(
     batch.clear();
 }
 
+// '{"org_id": 1, "project_id": 1, "name": "sentry.sessions.session.duration", "unit": "s", "type": "d", "value": [948.7285023840417, 229.7264210041775, 855.1960305024135, 475.592711958219, 825.5422355278084, 916.3170826715101], "timestamp": 1655940182, "tags": {"environment": "env-1", "release": "v1.1.1", "session.status": "exited"}}
+//
+//
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum MetricValue {
+    Vector(Vec<f32>),
+    Float(f32),
+}
+
+#[derive(Serialize, Deserialize)]
+struct MetricsPayload {
+    org_id: i64,
+    project_id: i64,
+    name: String,
+    unit: String,
+    r#type: String,
+    value: MetricValue,
+    timestamp: i64,
+    tags: HashMap<String, String>,
+}
+
+fn transform_message(payload: &str) -> String {
+    let payload = match serde_json::from_str::<MetricsPayload>(&payload) {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Could not parse payload! {:?}, {:?}", payload, e);
+            MetricsPayload {
+                org_id: 1,
+                project_id: 1,
+                name: String::from("fail"),
+                unit: String::from("fail"),
+                r#type: String::from("fail"),
+                value: MetricValue::Float(4.2069),
+                timestamp: 1234,
+                tags: HashMap::new(),
+            }
+        }
+    };
+    serde_json::to_string(&payload).unwrap()
+}
+
 async fn consume_and_produce(
     brokers: &str,
     group_id: &str,
@@ -121,15 +165,23 @@ async fn consume_and_produce(
                 match result {
                     Err(e) => panic!("Kafka error: {}", e),
                     Ok(m) => {
-                        let payload_clone = m.detach();
+                        let m_clone = m.detach();
+                        let payload_str = match m_clone.payload_view::<str>() {
+                            None => "",
+                            Some(Ok(s)) => s,
+                            Some(Err(e)) => {
+                                error!("Error while deserializing message payload: {:?}", e);
+                                ""
+                            }
+                        };
                         // this is only a pointer clone, it doesn't clone tha underlying producer
                         let tmp_producer = producer.clone();
-
+                        let transformed_message = transform_message(&payload_str);
                         batch.push(Box::pin(async move {
                             return tmp_producer
                                 .send(
                                     FutureRecord::to(dest_topic)
-                                        .payload(payload_clone.payload().unwrap())
+                                        .payload(&transformed_message)
                                         .key("None"),
                                     Duration::from_secs(0),
                                 )
@@ -200,7 +252,7 @@ async fn main() {
         )
         .arg(
             Arg::with_name("batch-size")
-                .long("batch_size")
+                .long("batch-size")
                 .help("size of the batch for flushing")
                 .default_value("10")
                 .takes_value(true),
