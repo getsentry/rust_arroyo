@@ -1,9 +1,6 @@
 use rdkafka::config::ClientConfig as RdKafkaConfig;
 use std::collections::HashMap;
 
-const DEFAULT_QUEUED_MAX_MESSAGE_KBYTES: u32 = 50_000;
-const DEFAULT_QUEUED_MIN_MESSAGES: u32 = 10_000;
-
 #[derive(Debug, Clone)]
 pub struct KafkaConfig {
     config_map: HashMap<String, String>,
@@ -37,14 +34,6 @@ impl KafkaConfig {
         config
             .config_map
             .insert("auto.offset.reset".to_string(), auto_offset_reset);
-        config.config_map.insert(
-            "queued.max.messages.kbytes".to_string(),
-            DEFAULT_QUEUED_MAX_MESSAGE_KBYTES.to_string(),
-        );
-        config.config_map.insert(
-            "queued.min.messages".to_string(),
-            DEFAULT_QUEUED_MIN_MESSAGES.to_string(),
-        );
 
         apply_override_params(config, override_params)
     }
@@ -86,7 +75,7 @@ fn apply_override_params(
 
 #[cfg(test)]
 mod tests {
-    use super::{KafkaConfig, DEFAULT_QUEUED_MIN_MESSAGES};
+    use super::KafkaConfig;
     use rdkafka::config::ClientConfig as RdKafkaConfig;
     use std::collections::HashMap;
 
@@ -104,10 +93,6 @@ mod tests {
         );
 
         let rdkafka_config: RdKafkaConfig = config.into();
-        assert_eq!(
-            rdkafka_config.get("queued.min.messages"),
-            Some(&DEFAULT_QUEUED_MIN_MESSAGES.to_string()[..])
-        );
         assert_eq!(
             rdkafka_config.get("queued.max.messages.kbytes"),
             Some("1000000")
