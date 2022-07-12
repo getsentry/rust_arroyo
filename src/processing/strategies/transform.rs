@@ -1,11 +1,9 @@
-use crate::processing::strategies::{
-    CommitRequest, InvalidMessage, MessageRejected, ProcessingStrategy,
-};
+use crate::processing::strategies::{CommitRequest, ProcessingError, ProcessingStrategy};
 use crate::types::Message;
 use std::time::Duration;
 
 pub struct Transform<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> {
-    pub function: fn(TPayload) -> Result<TTransformed, InvalidMessage>,
+    pub function: fn(TPayload) -> Result<TTransformed, ProcessingError>,
     pub next_step: Box<dyn ProcessingStrategy<TTransformed>>,
 }
 
@@ -16,7 +14,7 @@ impl<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> Processin
         self.next_step.poll()
     }
 
-    fn submit(&mut self, message: Message<TPayload>) -> Result<(), MessageRejected> {
+    fn submit(&mut self, message: Message<TPayload>) -> Result<(), ProcessingError> {
         // TODO: Handle InvalidMessage
         let transformed = (self.function)(message.payload).unwrap();
 
@@ -44,16 +42,14 @@ impl<TPayload: Clone + Send + Sync, TTransformed: Clone + Send + Sync> Processin
 #[cfg(test)]
 mod tests {
     use super::Transform;
-    use crate::processing::strategies::{
-        CommitRequest, InvalidMessage, MessageRejected, ProcessingStrategy,
-    };
+    use crate::processing::strategies::{CommitRequest, ProcessingError, ProcessingStrategy};
     use crate::types::{Message, Partition, Topic};
     use chrono::Utc;
     use std::time::Duration;
 
     #[test]
     fn test_transform() {
-        fn identity(value: String) -> Result<String, InvalidMessage> {
+        fn identity(value: String) -> Result<String, ProcessingError> {
             Ok(value)
         }
 
@@ -62,7 +58,7 @@ mod tests {
             fn poll(&mut self) -> Option<CommitRequest> {
                 None
             }
-            fn submit(&mut self, _message: Message<String>) -> Result<(), MessageRejected> {
+            fn submit(&mut self, _message: Message<String>) -> Result<(), ProcessingError> {
                 Ok(())
             }
             fn close(&mut self) {}

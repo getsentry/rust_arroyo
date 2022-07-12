@@ -4,7 +4,7 @@ use rust_arroyo::backends::kafka::config::KafkaConfig;
 use rust_arroyo::backends::kafka::types::KafkaPayload;
 use rust_arroyo::backends::kafka::KafkaConsumer;
 use rust_arroyo::processing::strategies::{
-    CommitRequest, MessageRejected, ProcessingStrategy, ProcessingStrategyFactory,
+    CommitRequest, ProcessingError, ProcessingStrategy, ProcessingStrategyFactory,
 };
 use rust_arroyo::processing::StreamProcessor;
 use rust_arroyo::types::{Message, Partition, Position, Topic};
@@ -30,7 +30,7 @@ impl ProcessingStrategy<KafkaPayload> for TestStrategy {
         }
     }
 
-    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
+    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), ProcessingError> {
         println!("SUBMIT {}", message);
         self.partitions.insert(
             message.partition,

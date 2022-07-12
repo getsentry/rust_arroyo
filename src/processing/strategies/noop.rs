@@ -1,5 +1,5 @@
 use crate::backends::kafka::types::KafkaPayload;
-use crate::processing::strategies::{CommitRequest, MessageRejected, ProcessingStrategy};
+use crate::processing::strategies::{CommitRequest, ProcessingError, ProcessingStrategy};
 use crate::types::{Message, Partition, Position};
 use log::info;
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ impl ProcessingStrategy<KafkaPayload> for NoopCommit {
         self.commit(false)
     }
 
-    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), MessageRejected> {
+    fn submit(&mut self, message: Message<KafkaPayload>) -> Result<(), ProcessingError> {
         let next_offset = message.next_offset();
         self.partitions.insert(
             message.partition,

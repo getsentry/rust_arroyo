@@ -74,7 +74,7 @@ fn main() {
     let destination = TopicOrPartition::Topic(topic);
     let config = KafkaConfig::new_producer_config(vec!["localhost:9092".to_string()], None);
 
-    let mut producer = KafkaProducer::new(config);
+    let mut producer = KafkaProducer::new(config, None);
 
     for _ in 0..number {
         let payload = KafkaPayload {
@@ -82,7 +82,7 @@ fn main() {
             headers: None,
             payload: Some(generate_metric().as_bytes().to_vec()),
         };
-        producer.produce(&destination, &payload);
+        producer.produce(&destination, &payload, 1).unwrap();
         producer.poll();
     }
 
