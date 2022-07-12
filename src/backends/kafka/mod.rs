@@ -173,7 +173,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
         let mut config_obj: ClientConfig = self.config.clone().into();
 
         let consumer: BaseConsumer<CustomContext> = config_obj
-            .set_log_level(RDKafkaLogLevel::Debug)
+            .set_log_level(RDKafkaLogLevel::Warning)
             .create_with_context(context)?;
         let topic_str: Vec<&str> = topics.iter().map(|t| t.name.as_ref()).collect();
         consumer.subscribe(&topic_str)?;
@@ -287,7 +287,7 @@ impl<'a> ArroyoConsumer<'a, KafkaPayload> for KafkaConsumer {
 
         let consumer = self.consumer.as_mut().unwrap();
         let partitions = TopicPartitionList::from_topic_map(&topic_map).unwrap();
-        let _ = consumer.commit(&partitions, CommitMode::Sync).unwrap();
+        consumer.commit(&partitions, CommitMode::Sync).unwrap();
 
         // Clear staged offsets
         let cleared_map = HashMap::new();
