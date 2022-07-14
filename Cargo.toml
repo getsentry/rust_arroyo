@@ -34,5 +34,9 @@ name = "noop-consumer"
 path = "src/bin/consumer/noop.rs"
 
 [[bin]]
+name = "consumer-only"
+path = "src/bin/consumer/consumer_only.rs"
+
+[[bin]]
 name = "generator"
 path = "src/bin/mocks/generate_data.rs"
